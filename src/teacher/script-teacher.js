@@ -1,0 +1,1053 @@
+// script-teacher.js
+
+// Reuse debugLog from script-core.js when available.
+// Fallback only if teacher script is loaded without core.
+if (typeof window.debugLog !== "function") {
+    window.debugLog = (...args) => {
+        if (window.DEBUG_LOGS) console.log(...args);
+    };
+}
+// ==========================
+// Teacher workflow guardrails + feedback UI
+// ==========================
+
+/**
+ * Small toast/banner in the bottom-right.
+ * We keep it lightweight (no dependency) and safe (textContent only).
+ */
+function getTeacherToastEl() {
+    let el = document.getElementById("teacherToast");
+    if (!el) {
+        el = document.createElement("div");
+        el.id = "teacherToast";
+        el.className = "teacher-toast hidden";
+        el.setAttribute("role", "status");
+        el.setAttribute("aria-live", "polite");
+        document.body.appendChild(el);
+    }
+    return el;
+}
+
+let toastTimer = null;
+function showTeacherToast(message, variant = "success") {
+    const el = getTeacherToastEl();
+    el.textContent = message;
+
+    el.classList.remove("hidden");
+    el.classList.toggle("error", variant === "error");
+
+    if (toastTimer) window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => {
+        el.classList.add("hidden");
+    }, 2200);
+}
+
+// Cache the original button labels so we can restore them after reset.
+const teacherUiLabels = {
+    startBtnBase: null,
+    targetBtnBase: null,
+};
+
+function updateSaveButtonVisual(buttonEl, isSaved, baseLabel) {
+    if (!buttonEl) return;
+
+    // Preserve the original label once.
+    if (!baseLabel) baseLabel = buttonEl.textContent?.trim() || "";
+
+    // Visual confirmation: add a check mark + a subtle style.
+    buttonEl.textContent = isSaved ? `${baseLabel} ✓` : baseLabel;
+    buttonEl.classList.toggle("btn-saved", Boolean(isSaved));
+}
+function updateWorkflowStepper() {
+    const stepStart = document.getElementById("wfStepStart");
+    const stepTarget = document.getElementById("wfStepTarget");
+    const stepAnalyze = document.getElementById("wfStepAnalyze");
+    const stepExport = document.getElementById("wfStepExport");
+
+    const sStart = document.getElementById("wfStartStatus");
+    const sTarget = document.getElementById("wfTargetStatus");
+    const sAnalyze = document.getElementById("wfAnalyzeStatus");
+    const sExport = document.getElementById("wfExportStatus");
+
+    const hasStart = Boolean(teacherState.startStructureSet);
+    const hasTarget = Boolean(teacherState.targetStructureSet);
+    const analyzed = Boolean(teacherState.analysisCompleted);
+
+    // Status text
+    if (sStart) sStart.textContent = hasStart ? "Saved ✓" : "Not set";
+    if (sTarget) sTarget.textContent = hasTarget ? "Saved ✓" : "Not set";
+    if (sAnalyze) sAnalyze.textContent = analyzed ? "Done ✓" : "Pending";
+    if (sExport) sExport.textContent = analyzed ? "Ready" : "Locked";
+
+    // Step classes (active/done/blocked)
+    const setStepClass = (el, state) => {
+        if (!el) return;
+        el.classList.remove("active", "done", "blocked");
+        el.classList.add(state);
+    };
+
+    setStepClass(stepStart, hasStart ? "done" : "active");
+    setStepClass(
+        stepTarget,
+        hasStart ? (hasTarget ? "done" : "active") : "blocked",
+    );
+    setStepClass(
+        stepAnalyze,
+        hasTarget ? (analyzed ? "done" : "active") : "blocked",
+    );
+    setStepClass(stepExport, analyzed ? "active" : "blocked");
+}
+
+function updateWorkflowUi() {
+    const analyzeBtn = document.getElementById("analyzeDifferencesBtn");
+
+    // Target button should only be usable after Start is saved
+    const targetBtn =
+        document.getElementById("setTargetStructureBtn") ||
+        document.getElementById("saveTargetStructureBtn");
+
+    const exportBtn =
+        document.getElementById("exportExerciseBtn") ||
+        document.getElementById("exportExerciseConfigBtn");
+
+    const hasStart = Boolean(teacherState.startStructureSet);
+    const hasTarget = Boolean(teacherState.targetStructureSet);
+    const analyzed = Boolean(teacherState.analysisCompleted);
+
+    if (targetBtn) {
+        targetBtn.disabled = !hasStart;
+        targetBtn.title = hasStart
+            ? "Set as target structure"
+            : "Set start structure first";
+    }
+
+    if (analyzeBtn) {
+        const ready = hasStart && hasTarget;
+        analyzeBtn.disabled = !ready;
+        analyzeBtn.title = ready
+            ? "Analyze differences"
+            : "Set start and target structures first";
+    }
+
+    // Step 4: Export only after Analyze (prevents exporting half-finished configs)
+    if (exportBtn) {
+        exportBtn.disabled = !analyzed;
+        exportBtn.title = analyzed
+            ? "Export exercise"
+            : "Run Analyze differences first";
+    }
+
+    updateWorkflowStepper();
+}
+
+function resetTeacherWorkflowState() {
+    teacherState.startStructureSet = false;
+    teacherState.targetStructureSet = false;
+    teacherState.initialStructure = null;
+    teacherState.targetStructure = null;
+    teacherState.generatedTasks = [];
+    teacherState.analysisCompleted = false;
+
+    // Hide tasks editor panel again
+    const editor = document.getElementById("tasksEditor");
+    if (editor) editor.classList.add("hidden");
+
+    // Restore button labels
+    const startBtn =
+        document.getElementById("setInitialStructureBtn") ||
+        document.getElementById("saveInitialStructureBtn");
+    const targetBtn =
+        document.getElementById("setTargetStructureBtn") ||
+        document.getElementById("saveTargetStructureBtn");
+
+    if (startBtn)
+        updateSaveButtonVisual(
+            startBtn,
+            false,
+            teacherUiLabels.startBtnBase ||
+                startBtn.textContent?.replace(/\s*✓\s*$/, "").trim(),
+        );
+    if (targetBtn)
+        updateSaveButtonVisual(
+            targetBtn,
+            false,
+            teacherUiLabels.targetBtnBase ||
+                targetBtn.textContent?.replace(/\s*✓\s*$/, "").trim(),
+        );
+
+    updateWorkflowUi();
+}
+
+// ==========================
+// Teacher UI event bindings
+// ==========================
+
+/**
+ * INVARIANT:
+ * - Static UI event listeners (buttons/inputs) are registered here.
+ * - Dynamic per-task listeners belong where tasks are rendered (task editor UI),
+ *   because those elements are recreated.
+ */
+function bindTeacherUiEvents() {
+    const initialBtn =
+        document.getElementById("setInitialStructureBtn") ||
+        document.getElementById("saveInitialStructureBtn");
+    if (initialBtn) {
+        initialBtn.addEventListener("click", () => {
+            teacherState.initialStructure = deepClone(fileSystem);
+            teacherState.startStructureSet = true;
+            // If start is re-saved, previously saved target/analyze may no longer be valid.
+            teacherState.targetStructureSet = false;
+            teacherState.targetStructure = null;
+            teacherState.analysisCompleted = false;
+            teacherState.generatedTasks = [];
+
+            // Also remove visual "Saved ✓" on target button
+            const targetBtn =
+                document.getElementById("setTargetStructureBtn") ||
+                document.getElementById("saveTargetStructureBtn");
+
+            if (targetBtn) {
+                teacherUiLabels.targetBtnBase =
+                    teacherUiLabels.targetBtnBase ||
+                    targetBtn.textContent?.replace(/\s*✓\s*$/, "").trim();
+
+                updateSaveButtonVisual(
+                    targetBtn,
+                    false,
+                    teacherUiLabels.targetBtnBase,
+                );
+            }
+
+            // Remember base label once (for reset)
+            teacherUiLabels.startBtnBase =
+                teacherUiLabels.startBtnBase ||
+                initialBtn.textContent?.replace(/\s*✓\s*$/, "").trim();
+
+            updateSaveButtonVisual(
+                initialBtn,
+                true,
+                teacherUiLabels.startBtnBase,
+            );
+            updateWorkflowUi();
+            showTeacherToast("Start structure saved ✓");
+
+            window.debugLog(
+                "Initial structure saved",
+                teacherState.initialStructure,
+            );
+        });
+    }
+
+    const targetBtn =
+        document.getElementById("setTargetStructureBtn") ||
+        document.getElementById("saveTargetStructureBtn");
+    if (targetBtn) {
+        targetBtn.addEventListener("click", () => {
+            if (!teacherState.startStructureSet) {
+                alert("Please set the start structure first.");
+                showTeacherToast("Set start first", "error");
+                updateWorkflowUi();
+                return;
+            }
+
+            // Changing target invalidates previous analysis
+            teacherState.analysisCompleted = false;
+            teacherState.generatedTasks = [];
+
+            teacherState.targetStructure = deepClone(fileSystem);
+            teacherState.targetStructureSet = true;
+
+            // Remember base label once (for reset)
+            teacherUiLabels.targetBtnBase =
+                teacherUiLabels.targetBtnBase ||
+                targetBtn.textContent?.replace(/\s*✓\s*$/, "").trim();
+
+            updateSaveButtonVisual(
+                targetBtn,
+                true,
+                teacherUiLabels.targetBtnBase,
+            );
+            updateWorkflowUi();
+            showTeacherToast("Target structure saved ✓");
+
+            window.debugLog(
+                "Target structure saved",
+                teacherState.targetStructure,
+            );
+        });
+    }
+
+    const analyzeBtn = document.getElementById("analyzeDifferencesBtn");
+    if (analyzeBtn) {
+        analyzeBtn.addEventListener("click", () => {
+            if (
+                !teacherState.initialStructure ||
+                !teacherState.targetStructure
+            ) {
+                alert("Please save both initial and target structures first.");
+                return;
+            }
+
+            const raw = diffStructures(
+                teacherState.initialStructure,
+                teacherState.targetStructure,
+            );
+
+            window.debugLog("RAW DIFF", raw);
+
+            teacherState.generatedTasks = generateTasksFromDiffs(raw);
+
+            window.debugLog("GENERATED TASKS", teacherState.generatedTasks);
+
+            renderTasksEditor(teacherState.generatedTasks);
+            teacherState.analysisCompleted = true;
+            updateWorkflowUi();
+            showTeacherToast("Analysis completed ✓");
+        });
+    }
+
+    // Correct export button id in exercise-configurator.html is exportExerciseBtn
+    const exportBtn =
+        document.getElementById("exportExerciseBtn") ||
+        document.getElementById("exportExerciseConfigBtn");
+    if (exportBtn) {
+        exportBtn.addEventListener("click", exportExerciseConfig);
+    }
+
+    // When teacher resets the filesystem, the saved snapshots are no longer valid.
+    const confirmResetBtn = document.getElementById("confirmResetBtn");
+    if (confirmResetBtn) {
+        confirmResetBtn.addEventListener("click", () => {
+            resetTeacherWorkflowState();
+            showTeacherToast("Reset: start/target cleared", "error");
+        });
+    }
+
+    // Meta fields
+    document.getElementById("exerciseTitle")?.addEventListener("input", (e) => {
+        teacherState.meta.title = e.target.value;
+    });
+
+    document
+        .getElementById("exerciseDescription")
+        ?.addEventListener("input", (e) => {
+            teacherState.meta.description = e.target.value;
+        });
+}
+
+let teacherState = {
+    // Guardrail flags: allow UI to enforce the correct teacher workflow
+    startStructureSet: false,
+    targetStructureSet: false,
+
+    //  New: track whether teacher ran Analyze (so Export becomes Step 4)
+    analysisCompleted: false,
+
+    initialStructure: null,
+    targetStructure: null,
+    generatedTasks: [],
+    meta: {
+        title: "",
+        description: "",
+    },
+};
+window.exerciseConfig = {
+    tasks: [],
+};
+
+// ==========================
+// diff-engine
+// ==========================
+
+/**
+ * diffStructures = RAW DETECTION ONLY
+ *
+ * INVARIANTS:
+ * - Must only collect facts (flattened views)
+ * - Must NOT decide what is "added/removed/renamed"
+ * - Must NOT enforce priorities
+ *
+ * Interpretation is handled in normalizeDiffs().
+ */
+function diffStructures(initial, target) {
+    return {
+        initialFlat: flattenStructure(initial),
+        targetFlat: flattenStructure(target),
+    };
+}
+
+/**
+ * normalizeDiffs = INTERPRETATION + PRIORITIZATION
+ *
+ * INVARIANTS:
+ * - Rename detection has priority over delete detection
+ * - A renamed file must NEVER be evaluated as deleted
+ * - A moved file must NEVER be evaluated as deleted (future-ready)
+ *
+ * Output:
+ * - Returns a normalized list of "diff records" used by task generation.
+ */
+function normalizeDiffs(raw) {
+    const { initialFlat, targetFlat } = raw;
+
+    // Phase 1: interpret facts into categorized diffs
+    const interpreted = interpretDiffsFromFlats(initialFlat, targetFlat);
+
+    // Phase 2: normalize interpreted diffs into a flat list of diff-records
+    const normalized = normalizeInterpretedDiffs(interpreted);
+
+    // Phase 3 (future): post-processing / prioritization passes if needed
+    // (kept empty intentionally to prevent behavior changes)
+
+    return normalized;
+}
+
+/**
+ * Convert two flat listings into interpreted diffs.
+ * This is where we enforce invariant priorities.
+ *
+ * NOTE: We intentionally preserve current behavior (incl. existing quirks)
+ * to keep this refactor non-breaking.
+ */
+/**
+ * Helper: build an index on `${type}:${name}` (legacy behavior).
+ */
+function buildTypeNameIndex(flat) {
+    const index = {};
+    flat.forEach((item) => {
+        index[`${item.type}:${item.name}`] = item;
+    });
+    return index;
+}
+
+/**
+ * Helper: detect rename candidates (same parent folder, different path).
+ *
+ * INVARIANT:
+ * - Rename detection has priority over delete detection.
+ *
+ * Returns:
+ * - renamed: array of { kind:"renamed-file", from, to }
+ * - renamedTo: Set of rename target paths (legacy tracking)
+ * - renamedPaths: Set containing both from/to paths (for removal exclusion)
+ */
+function detectRenamesSameDir(initialFlat, targetFlat) {
+    const renamed = [];
+    const renamedTo = new Set();
+
+    initialFlat.forEach((initialItem) => {
+        if (initialItem.type !== "file") return;
+
+        const initialDir = getParentPathMultiRoot(initialItem.path);
+
+        const sameDirTarget = targetFlat.find((t) => {
+            if (t.type !== "file") return false;
+
+            const targetDir = getParentPathMultiRoot(t.path);
+            return targetDir === initialDir && t.path !== initialItem.path;
+        });
+
+        if (sameDirTarget) {
+            renamed.push({
+                kind: "renamed-file",
+                from: initialItem.path,
+                to: sameDirTarget.path,
+            });
+
+            // Preserve existing behavior: track "to" paths as-is.
+            renamedTo.add(sameDirTarget.path);
+        }
+    });
+
+    const renamedPaths = new Set();
+    renamed.forEach((r) => {
+        renamedPaths.add(r.from);
+        renamedPaths.add(r.to);
+    });
+
+    return { renamed, renamedTo, renamedPaths };
+}
+
+/**
+ * Helper: detect added items.
+ *
+ * NOTE: We intentionally preserve the legacy "fullPath" quirk,
+ * to avoid any behavior change during this refactor step.
+ */
+function detectAddedItems(
+    targetFlat,
+    initialIndex,
+    renamedTo,
+    excludedTargetPaths = new Set(),
+) {
+    const added = [];
+
+    targetFlat.forEach((item) => {
+        const key = `${item.type}:${item.name}`;
+
+        // Compatibility:
+        // - renamedTo stores paths like "C:\Docs\File.txt" (flatten already includes name in item.path)
+        // - old quirk built "... \ name" again; keep both checks to avoid regressions
+        const fullPath = `${item.path}\\${item.name}`;
+        if (renamedTo.has(item.path) || renamedTo.has(fullPath)) return;
+        // Exclude paths that are targets of moved/renamed items to prevent double tasks
+        if (excludedTargetPaths?.has(item.path)) return;
+        if (!initialIndex[key]) {
+            added.push(item);
+        }
+    });
+
+    return added;
+}
+
+/**
+ * Helper: detect removed items (excluding rename participants).
+ */
+function detectRemovedItems(initialFlat, targetFlat, renamedPaths, movedPaths) {
+    const removed = [];
+
+    initialFlat.forEach((item) => {
+        if (movedPaths?.has(item.path)) return;
+
+        // Exclude anything involved in a rename
+        if (renamedPaths.has(item.path)) return;
+
+        const stillExists = targetFlat.some((t) => t.path === item.path);
+        if (!stillExists) removed.push(item);
+    });
+
+    return removed;
+}
+
+/**
+ * Helper: detect moved files.
+ *
+ * IMPORTANT:
+ * - This is intentionally a stub in this refactor step.
+ * - Returns [] to guarantee NO behavior change.
+ *
+ * Future extension:
+ * - Detect same "identity" moved to different parent folder.
+ * - Must respect invariants: moved must not be treated as removed.
+ */
+function detectMovedFilesStub(initialFlat, targetFlat) {
+    // Detect moved files by identity heuristic (fingerprint) instead of path.
+    // INVARIANTS:
+    // - Moved must not become removed
+    // - Works across roots (C: -> OneDrive)
+    // - Keeps behavior predictable (no fancy fuzzy matching)
+
+    const moved = [];
+
+    const initialFiles = initialFlat.filter((i) => i.type === "file");
+    const targetFiles = targetFlat.filter((i) => i.type === "file");
+
+    // Index targets by filename (simple, deterministic)
+    const targetsByName = new Map();
+    targetFiles.forEach((t) => {
+        if (!targetsByName.has(t.name)) targetsByName.set(t.name, []);
+        targetsByName.get(t.name).push(t);
+    });
+
+    initialFiles.forEach((src) => {
+        // If file still exists at same path, it's not moved
+        const stillThere = targetFiles.some((t) => t.path === src.path);
+        if (stillThere) return;
+
+        // Candidate targets with same name
+        const candidates = targetsByName.get(src.name) || [];
+        if (candidates.length === 0) return;
+
+        // Deterministic pick: if multiple same-name candidates exist, pick the first
+        // (Later we can improve with content/size fingerprint if needed)
+        const dst = candidates[0];
+
+        // Consider it moved if it exists elsewhere and source path no longer exists
+        moved.push({
+            type: "file",
+            name: src.name,
+            from: src.path,
+            to: dst.path,
+        });
+    });
+
+    return moved;
+}
+function detectMovedFoldersStub(initialFlat, targetFlat) {
+    // Detect moved folders by simple identity heuristic:
+    // - folder is not at original path anymore
+    // - folder exists elsewhere with same name
+    // Works across roots (C: -> OneDrive)
+
+    const moved = [];
+
+    const initialFolders = initialFlat.filter((i) => i.type === "folder");
+    const targetFolders = targetFlat.filter((i) => i.type === "folder");
+
+    // Index targets by folder name (deterministic)
+    const targetsByName = new Map();
+    targetFolders.forEach((t) => {
+        if (!targetsByName.has(t.name)) targetsByName.set(t.name, []);
+        targetsByName.get(t.name).push(t);
+    });
+
+    initialFolders.forEach((src) => {
+        // If folder still exists at same path, it's not moved
+        const stillThere = targetFolders.some((t) => t.path === src.path);
+        if (stillThere) return;
+
+        const candidates = targetsByName.get(src.name) || [];
+        if (candidates.length === 0) return;
+
+        // Deterministic: pick first same-name candidate
+        const dst = candidates[0];
+
+        moved.push({
+            type: "folder",
+            name: src.name,
+            from: src.path,
+            to: dst.path,
+        });
+    });
+
+    return moved;
+}
+
+/**
+ * Convert two flat listings into interpreted diffs.
+ * This is where we enforce invariant priorities.
+ *
+ * NOTE: We intentionally preserve current behavior (incl. existing quirks)
+ * to keep this refactor non-breaking.
+ */
+function interpretDiffsFromFlats(initialFlat, targetFlat) {
+    const diffs = {
+        added: [],
+        removed: [],
+        moved: [],
+        movedFolders: [], // (als je moved-folders al toevoegde)
+        renamed: [],
+    };
+
+    // ---- Rename detection (priority #1) ----
+    const { renamed, renamedTo, renamedPaths } = detectRenamesSameDir(
+        initialFlat,
+        targetFlat,
+    );
+    diffs.renamed = renamed;
+
+    // ---- Indexing (legacy behavior) ----
+    const initialIndex = buildTypeNameIndex(initialFlat);
+
+    // ---- Moved detection (priority #2) ----
+    diffs.moved = detectMovedFilesStub(initialFlat, targetFlat);
+
+    // If you already added moved folders, keep this; otherwise leave as []
+    if (typeof detectMovedFoldersStub === "function") {
+        diffs.movedFolders = detectMovedFoldersStub(initialFlat, targetFlat);
+    }
+
+    // Build movedPaths: exclude these from removed detection
+    const movedPaths = new Set();
+    diffs.moved.forEach((m) => {
+        movedPaths.add(m.from);
+        movedPaths.add(m.to);
+    });
+    diffs.movedFolders.forEach((m) => {
+        movedPaths.add(m.from);
+        movedPaths.add(m.to);
+    });
+
+    // Build excludedTargetPaths: exclude moved-to (and rename-to) from "added" detection
+    const excludedTargetPaths = new Set();
+    diffs.moved.forEach((m) => excludedTargetPaths.add(m.to));
+    diffs.movedFolders.forEach((m) => excludedTargetPaths.add(m.to));
+
+    // NOTE: renamedTo is already handled via renamedTo.has checks in detectAddedItems
+    // but keeping this here makes it future-ready if we refactor detectAddedItems later.
+    renamedTo.forEach((p) => excludedTargetPaths.add(p));
+
+    // ---- Added detection (after moved/rename so we can exclude moved-to) ----
+    diffs.added = detectAddedItems(
+        targetFlat,
+        initialIndex,
+        renamedTo,
+        excludedTargetPaths,
+    );
+
+    // ---- Removed detection (rename + moved have priority) ----
+    diffs.removed = detectRemovedItems(
+        initialFlat,
+        targetFlat,
+        renamedPaths,
+        movedPaths,
+    );
+
+    // Debug logs preserved (can be gated later)
+    window.debugLog("INITIAL FLAT", initialFlat);
+    window.debugLog("TARGET FLAT", targetFlat);
+
+    return diffs;
+}
+
+/**
+ * Convert interpreted diffs to a normalized list of records.
+ * This output format is what createTaskFromDiff() expects.
+ */
+function normalizeInterpretedDiffs(diffs) {
+    const result = [];
+
+    diffs.added.forEach((item) => {
+        result.push({
+            kind: item.type === "folder" ? "added-folder" : "added-file",
+            path: item.path,
+            name: item.name,
+        });
+    });
+
+    diffs.removed.forEach((item) => {
+        result.push({
+            kind: item.type === "folder" ? "removed-folder" : "removed-file",
+            path: item.path,
+            name: item.name,
+        });
+    });
+
+    diffs.moved.forEach((item) => {
+        if (item.type === "file") {
+            result.push({
+                kind: "moved-file",
+                from: item.from,
+                to: item.to,
+                name: item.name,
+            });
+        }
+    });
+
+    diffs.movedFolders.forEach((item) => {
+        if (item.type === "folder") {
+            result.push({
+                kind: "moved-folder",
+                from: item.from,
+                to: item.to,
+                name: item.name,
+            });
+        }
+    });
+
+    diffs.renamed.forEach((item) => {
+        result.push({
+            kind: "renamed-file",
+            from: item.from,
+            to: item.to,
+        });
+    });
+
+    return result;
+}
+
+// taskmodeling
+
+function createTaskFromDiff(diff) {
+    switch (diff.kind) {
+        case "added-folder":
+            const task = {
+                type: "folder-created",
+                description: "",
+                checks: [{ type: "folder-exists", path: diff.path }],
+            };
+
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+
+        case "removed-file": {
+            const task = {
+                type: "file-deleted",
+                description: "",
+                checks: [{ type: "file-not-exists", path: diff.path }],
+            };
+
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+
+        case "moved-file": {
+            const task = {
+                type: "file-moved",
+                description: "",
+                checks: [
+                    {
+                        type: "file-moved",
+                        from: diff.from,
+                        to: diff.to,
+                    },
+                ],
+            };
+
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+        case "moved-folder": {
+            const task = {
+                type: "folder-moved",
+                description: "",
+                checks: [
+                    {
+                        type: "folder-moved",
+                        from: diff.from,
+                        to: diff.to,
+                    },
+                ],
+            };
+
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+
+        case "renamed-file": {
+            const task = {
+                type: "file-renamed",
+                description: "",
+                checks: [
+                    {
+                        type: "file-renamed",
+                        from: diff.from,
+                        to: diff.to,
+                    },
+                ],
+            };
+
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+
+        case "removed-folder": {
+            const task = {
+                type: "folder-deleted",
+                description: "",
+                checks: [{ type: "folder-not-exists", path: diff.path }],
+            };
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+
+        case "added-file": {
+            // Teacher-generated task: student must create a file at this exact path
+            const task = {
+                type: "file-created",
+                description: "",
+                checks: [{ type: "file-exists", path: diff.path }],
+            };
+
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+        default:
+            return null;
+    }
+}
+
+function generateDefaultTaskDescription(task) {
+    if (!task || !task.checks || task.checks.length === 0) return "";
+
+    switch (task.type) {
+        case "folder-created": {
+            const path = task.checks[0].path;
+            const folderName = getNameFromPath(path);
+            return `Maak een nieuwe map "${folderName}" op de juiste plaats.`;
+        }
+
+        case "file-deleted": {
+            const path = task.checks[0].path;
+            const fileName = getNameFromPath(path);
+            return `Verwijder het bestand "${fileName}".`;
+        }
+
+        case "file-moved": {
+            // For move tasks, the check is "file-moved" with { from, to }
+            const moveCheck = task.checks.find((c) => c.type === "file-moved");
+            const to = moveCheck?.to;
+
+            if (!to) return "Verplaats het bestand naar de juiste plaats.";
+
+            const fileName = getNameFromPath(to);
+            const parent = getParentPathMultiRoot(to);
+            const parentName = parent ? getNameFromPath(parent) : "This PC";
+
+            return `Verplaats het bestand "${fileName}" naar "${parentName}".`;
+        }
+
+        case "folder-moved": {
+            const moveCheck = task.checks.find(
+                (c) => c.type === "folder-moved",
+            );
+            const to = moveCheck?.to;
+
+            if (!to) return "Verplaats de map naar de juiste plaats.";
+
+            const folderName = getNameFromPath(to);
+            const parent = getParentPathMultiRoot(to);
+            const parentName = parent ? getNameFromPath(parent) : "This PC";
+
+            return `Verplaats de map "${folderName}" naar "${parentName}".`;
+        }
+
+        case "file-renamed": {
+            const to = task.checks[0].to;
+            const newName = getNameFromPath(to);
+            return `Wijzig de bestandsnaam naar "${newName}".`;
+        }
+
+        case "folder-deleted": {
+            const path = task.checks[0].path;
+            const folderName = getNameFromPath(path);
+            return `Verwijder de map "${folderName}".`;
+        }
+        case "file-created": {
+            const path = task.checks[0].path;
+            const fileName = getNameFromPath(path);
+            return `Maak een nieuw bestand "${fileName}" op de juiste plaats.`;
+        }
+
+        default:
+            return "Voer deze opdracht uit.";
+    }
+}
+
+// task generation
+function generateTasksFromDiffs(diffs) {
+    const normalized = normalizeDiffs(diffs);
+
+    const tasks = normalized
+        .map((diff) => createTaskFromDiff(diff))
+        .filter(Boolean);
+
+    teacherState.generatedTasks = tasks;
+    return tasks;
+}
+
+function renderTasksEditor(tasks = teacherState.generatedTasks) {
+    if (!Array.isArray(tasks)) tasks = [];
+    const editor = document.getElementById("tasksEditor"); // task editor
+    const list = document.getElementById("tasksList");
+
+    if (!editor || !list) {
+        window.debugLog("Tasks editor DOM elements not found");
+        return;
+    }
+
+    editor.classList.remove("hidden");
+    list.innerHTML = "";
+
+    tasks.forEach((task, index) => {
+        // default state
+        task.enabled = true;
+        task.description = task.description || "";
+
+        const item = document.createElement("div");
+        item.className = "task-item";
+
+        // header
+        const header = document.createElement("div");
+        header.className = "task-header";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = task.enabled;
+        checkbox.addEventListener("change", () => {
+            task.enabled = checkbox.checked;
+        });
+
+        const typeLabel = document.createElement("span");
+        typeLabel.className = "task-type";
+        typeLabel.textContent = task.type;
+
+        header.appendChild(checkbox);
+        header.appendChild(typeLabel);
+
+        // description input
+        const input = document.createElement("input");
+        input.type = "text";
+        input.placeholder = "Describe this task for the student...";
+        input.className = "task-description-input";
+        input.value = task.description;
+
+        input.addEventListener("input", () => {
+            task.description = input.value;
+        });
+
+        item.appendChild(header);
+        item.appendChild(input);
+
+        list.appendChild(item);
+    });
+}
+
+// task export
+function exportExerciseConfig() {
+    if (!teacherState.analysisCompleted) {
+        alert("Please run ‘Analyze differences’ first.");
+        showTeacherToast("Run Analyze first", "error");
+        return;
+    }
+    // Guardrail: exporting without a start/target is almost always a teacher mistake.
+    if (!teacherState.initialStructure || !teacherState.startStructureSet) {
+        alert(
+            "No start structure defined. Click ‘Set as start structure’ first.",
+        );
+        showTeacherToast("Missing start structure", "error");
+        return;
+    }
+
+    if (!teacherState.targetStructure || !teacherState.targetStructureSet) {
+        alert(
+            "No target structure defined. Click ‘Set as target structure’ first.",
+        );
+        showTeacherToast("Missing target structure", "error");
+        return;
+    }
+
+    const tasks = teacherState.generatedTasks
+        .filter((task) => task.enabled)
+        .filter((task) => task.description && task.description.trim() !== "");
+
+    if (tasks.length === 0) {
+        alert("No valid tasks to export.");
+        return;
+    }
+
+    const exportData = {
+        meta: {
+            title: teacherState.meta.title || "Untitled exercise",
+            description: teacherState.meta.description || "",
+        },
+        initialStructure: teacherState.initialStructure,
+        tasks: tasks.map((task) => ({
+            description: task.description,
+            checks: task.checks,
+        })),
+    };
+
+    const json = JSON.stringify(exportData, null, 2);
+
+    downloadJSON(json, "exercise-config.json");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    bindTeacherUiEvents();
+    // Initial guardrail state: analyze is disabled until start+target are saved
+    updateWorkflowUi();
+
+    // Use current filesystem as initial structure in teacher mode
+    if (!fileSystem) {
+        console.error("Teacher mode started without a filesystem");
+    }
+    // Do NOT auto-set initial structure.
+    // Teacher must explicitly choose the start structure.
+    window.debugLog(
+        "Teacher mode ready. Waiting for start structure selection.",
+    );
+
+    window.debugLog("Default start structure loaded for teacher");
+});

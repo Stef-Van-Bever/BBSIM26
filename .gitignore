@@ -1,0 +1,20 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Archives / old versions
+archive/
+old/
+backup/
+*_old/
+*_backup/
+
+# Build outputs (kies 1 strategie)
+dist/
+scorm/package/
+*.zip

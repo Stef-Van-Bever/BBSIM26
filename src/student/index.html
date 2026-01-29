@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Windows 11 File Explorer Simulator</title>
+        <link rel="stylesheet" href="../core/style.css" />
+    </head>
+    <body>
+        <div class="app-container">
+            <header class="app-header">
+                <h1 id="exerciseTitleDisplay">
+                    Windows 11 File Explorer Simulator
+                </h1>
+                <p id="exerciseDescriptionDisplay">
+                    Practice file management skills in a safe environment
+                </p>
+            </header>
+
+            <!-- Main Layout -->
+            <div class="main-layout">
+                <!-- Collapsible Side Panel for Instructions -->
+                <div id="sidePanel" class="side-panel hidden">
+                    <div class="side-panel-header">
+                        <h3>Exercise Instructions</h3>
+                        <button
+                            id="closeSidePanelBtn"
+                            class="close-side-panel-btn"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                            >
+                                <path d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="side-panel-content">
+                        <div
+                            class="instruction-card"
+                            id="sidePanelInstructions"
+                        >
+                            <ul
+                                id="instructionChecklist"
+                                class="instruction-checklist"
+                            ></ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Explorer Container -->
+                <div class="explorer-container">
+                    <!-- Toolbar -->
+                    <div class="toolbar">
+                        <div class="nav-buttons">
+                            <button
+                                id="backBtn"
+                                class="nav-btn"
+                                disabled
+                                title="Back"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path d="M19 12H5M12 19l-7-7 7-7" />
+                                </svg>
+                            </button>
+                            <button
+                                id="forwardBtn"
+                                class="nav-btn"
+                                disabled
+                                title="Forward"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path d="M5 12h14M12 5l7 7-7 7" />
+                                </svg>
+                            </button>
+                            <button
+                                id="upBtn"
+                                class="nav-btn"
+                                disabled
+                                title="Up"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path d="M12 19V5M5 12l7-7 7 7" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div class="toolbar-buttons">
+                            <button
+                                id="newFolderBtn"
+                                class="toolbar-btn"
+                                title="New Folder"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path
+                                        d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"
+                                    />
+                                    <path d="M12 11v6M9 14h6" />
+                                </svg>
+                                <span>New folder</span>
+                            </button>
+                            <button
+                                id="newFileBtn"
+                                class="toolbar-btn"
+                                title="New File"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path
+                                        d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+                                    />
+                                    <path d="M14 2v6h6M12 18v-6M9 15h6" />
+                                </svg>
+                                <span>New file</span>
+                            </button>
+                            <div class="toolbar-divider"></div>
+                            <button
+                                id="cutBtn"
+                                class="toolbar-btn"
+                                disabled
+                                title="Cut"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <circle cx="6" cy="6" r="3" />
+                                    <circle cx="6" cy="18" r="3" />
+                                    <path
+                                        d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"
+                                    />
+                                </svg>
+                                <span>Cut</span>
+                            </button>
+                            <button
+                                id="copyBtn"
+                                class="toolbar-btn"
+                                disabled
+                                title="Copy"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <rect
+                                        x="9"
+                                        y="9"
+                                        width="13"
+                                        height="13"
+                                        rx="2"
+                                    />
+                                    <path
+                                        d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"
+                                    />
+                                </svg>
+                                <span>Copy</span>
+                            </button>
+                            <button
+                                id="pasteBtn"
+                                class="toolbar-btn"
+                                disabled
+                                title="Paste"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path
+                                        d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"
+                                    />
+                                    <rect
+                                        x="8"
+                                        y="2"
+                                        width="8"
+                                        height="4"
+                                        rx="1"
+                                    />
+                                </svg>
+                                <span>Paste</span>
+                            </button>
+                            <div class="toolbar-divider"></div>
+                            <button
+                                id="renameBtn"
+                                class="toolbar-btn"
+                                disabled
+                                title="Rename"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path
+                                        d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"
+                                    />
+                                </svg>
+                                <span>Rename</span>
+                            </button>
+                            <button
+                                id="deleteBtn"
+                                class="toolbar-btn danger"
+                                disabled
+                                title="Delete"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path
+                                        d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+                                    />
+                                </svg>
+                                <span>Delete</span>
+                            </button>
+                            <div class="toolbar-divider"></div>
+                            <button
+                                id="compressBtn"
+                                class="toolbar-btn"
+                                disabled
+                                title="Compress to ZIP"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path d="M21 8v13H3V8" />
+                                    <path d="M1 3h22v5H1z" />
+                                    <path d="M10 12h4" />
+                                </svg>
+                                <span>Compress</span>
+                            </button>
+                            <button
+                                id="extractBtn"
+                                class="toolbar-btn"
+                                disabled
+                                title="Extract"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path
+                                        d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"
+                                    />
+                                    <path d="M12 11v6M9 14h6" />
+                                </svg>
+                                <span>Extract</span>
+                            </button>
+                        </div>
+
+                        <div class="view-toggle">
+                            <button
+                                id="gridViewBtn"
+                                class="view-btn active"
+                                title="Grid View"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <rect x="3" y="3" width="7" height="7" />
+                                    <rect x="14" y="3" width="7" height="7" />
+                                    <rect x="14" y="14" width="7" height="7" />
+                                    <rect x="3" y="14" width="7" height="7" />
+                                </svg>
+                            </button>
+                            <button
+                                id="listViewBtn"
+                                class="view-btn"
+                                title="List View"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path
+                                        d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Address Bar -->
+                    <div class="address-bar-container">
+                        <div class="address-bar">
+                            <div id="breadcrumbs" class="breadcrumbs"></div>
+                            <input
+                                type="text"
+                                id="addressInput"
+                                class="address-input"
+                                style="display: none"
+                            />
+                            <button
+                                id="refreshBtn"
+                                class="refresh-btn"
+                                title="Refresh"
+                            >
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                >
+                                    <path d="M23 4v6h-6M1 20v-6h6" />
+                                    <path
+                                        d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="search-bar">
+                            <input
+                                type="text"
+                                placeholder="Search"
+                                class="search-input"
+                            />
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                            >
+                                <circle cx="11" cy="11" r="8" />
+                                <path d="M21 21l-4.35-4.35" />
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Main Content -->
+                    <div class="main-content">
+                        <!-- Navigation Pane -->
+                        <div class="nav-pane">
+                            <div class="nav-section">
+                                <div class="nav-header">Quick access</div>
+                                <div id="recycleBinNav" class="nav-item">
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                    >
+                                        <path
+                                            d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"
+                                        />
+                                    </svg>
+                                    <span>Recycle Bin</span>
+                                    <span
+                                        id="recycleBinCount"
+                                        class="recycle-bin-badge hidden"
+                                        >0</span
+                                    >
+                                </div>
+                            </div>
+                            <div class="nav-section">
+                                <div id="thisPCNav" class="nav-item">
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                    >
+                                        <rect
+                                            x="2"
+                                            y="3"
+                                            width="20"
+                                            height="14"
+                                            rx="2"
+                                        />
+                                        <path d="M8 21h8M12 17v4" />
+                                    </svg>
+                                    <span>This PC</span>
+                                </div>
+                                <div id="folderTree" class="folder-tree"></div>
+                            </div>
+                        </div>
+
+                        <!-- File List -->
+                        <div id="fileList" class="file-list"></div>
+                    </div>
+
+                    <!-- Status Bar -->
+                    <div id="statusBar" class="status-bar">0 items</div>
+                </div>
+            </div>
+
+            <!-- Instructions Panel (bottom) -->
+            <div class="instructions-panel">
+                <div class="instructions-content" style="visibility: hidden">
+                    <h3>Exercise Instructions</h3>
+                    <p id="instructionsText"></p>
+                </div>
+                <div class="instructions-buttons">
+                    <button id="showInstructionsBtn" class="btn-secondary">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                        >
+                            <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" />
+                            <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
+                        </svg>
+                        Show instructions
+                    </button>
+                    <button id="resetBtn" class="btn-secondary">RESET</button>
+                    <button id="checkBtn" class="btn-primary">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                        >
+                            <path d="M9 11l3 3L22 4" />
+                            <path
+                                d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"
+                            />
+                        </svg>
+                        CHECK
+                    </button>
+                    <button id="submitBtn" class="btn-primary blue">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                        >
+                            <path d="M9 11l3 3L22 4" />
+                            <path
+                                d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"
+                            />
+                        </svg>
+                        SUBMIT
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modals -->
+        <div id="modalOverlay" class="modal-overlay"></div>
+
+        <!-- Instructions Modal -->
+        <div id="instructionsModal" class="modal" data-overlay-close="false">
+            <div class="modal-header">
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    class="modal-icon blue"
+                >
+                    <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" />
+                    <path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
+                </svg>
+                <h2>Exercise Instructions</h2>
+            </div>
+            <div class="modal-body">
+                <div id="modalInstructionsText" class="instructions-box"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="closeInstructionsBtn" class="btn-primary">
+                    I understand the assignment
+                </button>
+            </div>
+        </div>
+
+        <!-- Reset Modal -->
+        <div id="resetModal" class="modal" data-overlay-close="false">
+            <div class="modal-header">
+                <h2>Reset assignment</h2>
+            </div>
+            <div class="modal-body">
+                <p>
+                    Are you sure you want to reset the assignment?<br />
+                    <strong>All progress will be lost.</strong>
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelResetBtn" class="btn-secondary">
+                    Cancel
+                </button>
+                <button id="confirmResetBtn" class="btn-primary danger">
+                    Yes, reset
+                </button>
+            </div>
+        </div>
+
+        <!-- Submit Confirmation Modal -->
+        <div id="submitConfirmModal" class="modal">
+            <div class="modal-header">
+                <h2>Submit assignment</h2>
+            </div>
+            <div class="modal-body">
+                <p>
+                    Weet je zeker dat je de oefening wil indienen?<br />
+                    <strong>Je kan dit daarna niet meer aanpassen.</strong>
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelSubmitBtn" class="btn-secondary">
+                    Nee, ik wil verderwerken
+                </button>
+                <button id="confirmSubmitBtn" class="btn-primary blue">
+                    Ja, ik ben zeker
+                </button>
+            </div>
+        </div>
+
+        <!-- Results Modal -->
+        <div id="resultsModal" class="modal">
+            <div class="modal-header" id="resultsHeader">
+                <h2>Results</h2>
+            </div>
+            <div class="modal-body" id="resultsBody"></div>
+            <div class="modal-footer">
+                <button id="closeResultsBtn" class="btn-secondary">
+                    Close
+                </button>
+            </div>
+        </div>
+
+        <!-- Properties Modal -->
+        <div id="propertiesModal" class="modal">
+            <div class="modal-header">
+                <h2 id="propertiesTitle">Properties</h2>
+            </div>
+            <div class="modal-body" id="propertiesBody"></div>
+            <div class="modal-footer">
+                <button id="closePropertiesBtn" class="btn-secondary">
+                    Close
+                </button>
+            </div>
+        </div>
+
+        <!-- File Viewer Modal -->
+        <div id="fileViewerModal" class="modal modal-large">
+            <div class="modal-header">
+                <h2 id="fileViewerTitle">File Viewer</h2>
+            </div>
+            <div class="modal-body">
+                <div id="fileViewerContent" class="file-viewer-content"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="closeFileViewerBtn" class="btn-secondary">
+                    Close
+                </button>
+            </div>
+        </div>
+
+        <!-- New Item Modal -->
+        <div id="newItemModal" class="modal">
+            <div class="modal-header">
+                <h2 id="newItemTitle">Create New</h2>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="newItemName">Name</label>
+                    <input
+                        type="text"
+                        id="newItemName"
+                        class="form-input"
+                        placeholder="Enter name..."
+                    />
+                </div>
+                <div
+                    id="newFileContentGroup"
+                    class="form-group"
+                    style="display: none"
+                >
+                    <label for="newFileContent">Content (optional)</label>
+                    <textarea
+                        id="newFileContent"
+                        class="form-textarea"
+                        placeholder="File content..."
+                    ></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelNewItemBtn" class="btn-secondary">
+                    Cancel
+                </button>
+                <button id="createNewItemBtn" class="btn-primary">
+                    Create
+                </button>
+            </div>
+        </div>
+        <!-- Delete Confirmation Modal -->
+        <div id="deleteConfirmModal" class="modal" data-overlay-close="false">
+            <div class="modal-header">
+                <h2>Delete item</h2>
+            </div>
+            <div class="modal-body">
+                <p id="deleteConfirmText">
+                    Are you sure you want to delete this item?
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelDeleteBtn" class="btn-secondary">
+                    Cancel
+                </button>
+                <button id="confirmDeleteBtn" class="btn-primary danger">
+                    Delete
+                </button>
+            </div>
+        </div>
+
+        <!-- Context Menu -->
+        <div id="contextMenu" class="context-menu"></div>
+
+        <!-- Student mode (default) -->
+        <script>
+            window.APP_MODE = "student";
+        </script>
+
+        <!-- Main app -->
+        <script src="../core/script-core.js"></script>
+
+        <!-- Student-only UI helpers (meta rendering, etc.) -->
+        <script src="script-student.js"></script>
+    </body>
+</html>
