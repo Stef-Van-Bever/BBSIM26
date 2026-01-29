@@ -1031,7 +1031,7 @@ function exportExerciseConfig() {
 
     const json = JSON.stringify(exportData, null, 2);
 
-    downloadJSON(json, "exercise-config.json");
+    downloadJSON(json, "../config/exercise-config.json");
 }
 
 document.addEventListener("DOMContentLoaded", () => {

@@ -587,7 +587,7 @@ function requestSubmit() {
  */
 async function loadExerciseConfig() {
     try {
-        const response = await fetch("exercise-config.json");
+        const response = await fetch("../config/exercise-config.json");
         if (!response.ok) {
             throw new Error("exercise-config.json not found");
         }
