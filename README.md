@@ -1,6 +1,6 @@
-# Bestandsbeheersimulator (SCORM)
+# Bestandsbeheersimulator BBSIM (SCORM)
 
-Dit is een open-source HTML/JS/CSS oefenpakket (SCORM-compatibel) waarmee leerkrachten oefeningen rond bestandsbeheer kunnen maken. Leerlingen oefenen in een gesimuleerde bestandsomgeving met opdrachten en automatische checks.
+Dit is een open-source HTML/JS/CSS oefenpakket (SCORM-compatibel) waarmee leerkrachten oefeningen rond bestandsbeheer kunnen maken. Leerlingen kunnen daarmee oefenen in een gesimuleerde bestandsomgeving met specifieke opdrachten met automatische checks.
 
 ## Features
 
