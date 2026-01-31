@@ -408,6 +408,42 @@ function joinPathMultiRoot(parent, name) {
     return `${parent}\\${name}`;
 }
 
+// --- Protected system folders (pure) ---------------------------------------
+function normalizePath(path) {
+    if (!path) return "";
+    return path.replace(/\//g, "\\").replace(/\\+$/, "");
+}
+
+const PROTECTED_FOLDERS = [
+    "C:\\Desktop",
+    "C:\\Documents",
+    "C:\\Downloads",
+    "OneDrive",
+];
+const PROTECTED_FOLDER_SET = new Set(
+    PROTECTED_FOLDERS.map((p) => normalizePath(p)),
+);
+
+function isProtectedFolderPath(path) {
+    if (!path) return false;
+    return PROTECTED_FOLDER_SET.has(normalizePath(path));
+}
+
+function isProtectedFolderItem(item, parentPath) {
+    if (!item || item.type !== "folder") return false;
+    const fullPath = joinPathMultiRoot(parentPath, item.name);
+    return isProtectedFolderPath(fullPath);
+}
+
+function getProtectedSelection(items, parentPath, selectedNames) {
+    if (!Array.isArray(items) || !Array.isArray(selectedNames)) return [];
+    return items.filter(
+        (item) =>
+            selectedNames.includes(item.name) &&
+            isProtectedFolderItem(item, parentPath),
+    );
+}
+
 // --- Naming helpers (SYSTEM operations: auto-rename for paste/restore/etc.) --
 /**
  * Resolve naming conflicts by auto-renaming.
@@ -1781,6 +1817,8 @@ function updateToolbarState() {
     const selectedItemObjects = items.filter((i) =>
         selectedItems.includes(i.name),
     );
+    const hasProtectedSelection =
+        getProtectedSelection(items, currentPath, selectedItems).length > 0;
 
     const hasZipSelected = selectedItemObjects.some((i) =>
         i.name.endsWith(".zip"),
@@ -1793,7 +1831,7 @@ function updateToolbarState() {
         currentPath === "Recycle Bin" || currentPath === "This PC";
 
     withEl("cutBtn", (btn) => {
-        btn.disabled = !hasSelection || isBlockedLocation;
+        btn.disabled = !hasSelection || isBlockedLocation || hasProtectedSelection;
     });
 
     withEl("copyBtn", (btn) => {
@@ -1805,11 +1843,14 @@ function updateToolbarState() {
     });
 
     withEl("renameBtn", (btn) => {
-        btn.disabled = selectedItems.length !== 1 || isBlockedLocation;
+        btn.disabled =
+            selectedItems.length !== 1 ||
+            isBlockedLocation ||
+            hasProtectedSelection;
     });
 
     withEl("deleteBtn", (btn) => {
-        btn.disabled = !hasSelection || isBlockedLocation;
+        btn.disabled = !hasSelection || isBlockedLocation || hasProtectedSelection;
     });
 
     withEl("compressBtn", (btn) => {
@@ -1950,6 +1991,11 @@ function applyRename(oldName, newName, items) {
 }
 
 function startRename() {
+    const items = getCurrentItems();
+    if (getProtectedSelection(items, currentPath, selectedItems).length > 0) {
+        showProtectedFolderAlert("rename");
+        return;
+    }
     beginRenamingSelectedItem();
 }
 
@@ -2100,6 +2146,11 @@ function performSoftDeleteToRecycleBin() {
 
 // Delete - Move to Recycle Bin
 function handleDelete() {
+    const items = getCurrentItems();
+    if (getProtectedSelection(items, currentPath, selectedItems).length > 0) {
+        showProtectedFolderAlert("delete");
+        return;
+    }
     // 👉 Teacher mode: geen delete modal → direct delete (existing behavior)
     if (isTeacherModeDeleteFlow()) {
         setPendingDeleteFromSelection();
@@ -2196,6 +2247,10 @@ function handleCut() {
     const items = getCurrentItems().filter((i) =>
         selectedItems.includes(i.name),
     );
+    if (getProtectedSelection(items, currentPath, selectedItems).length > 0) {
+        showProtectedFolderAlert("move");
+        return;
+    }
     clipboard = {
         items: deepClone(items),
         operation: "cut",
@@ -2249,6 +2304,17 @@ function shouldClearClipboardAfterPaste(operation, sourcePath, targetPath) {
 
 function handlePaste() {
     if (!clipboard) return;
+    if (
+        clipboard.operation === "cut" &&
+        getProtectedSelection(
+            clipboard.items,
+            clipboard.sourcePath,
+            clipboard.items.map((i) => i.name),
+        ).length > 0
+    ) {
+        showProtectedFolderAlert("move");
+        return;
+    }
 
     const targetFolder = getCurrentFolder();
 
@@ -2415,6 +2481,7 @@ function createNewItem() {
 
 function buildContextMenuForItem(item) {
     const isZip = item.name.endsWith(".zip");
+    const isProtected = isProtectedFolderItem(item, currentPath);
 
     return `
         <div class="context-item" onclick="handleContextOpen()">
@@ -2422,7 +2489,9 @@ function buildContextMenuForItem(item) {
             Open
         </div>
         <div class="context-divider"></div>
-        <div class="context-item" onclick="handleCut(); hideContextMenu();">
+        <div class="context-item ${isProtected ? "disabled" : ""}" onclick="${
+            isProtected ? "" : "handleCut(); hideContextMenu();"
+        }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/></svg>
             Cut
         </div>
@@ -2443,11 +2512,15 @@ function buildContextMenuForItem(item) {
                </div>`
         }
         <div class="context-divider"></div>
-        <div class="context-item" onclick="startRename(); hideContextMenu();">
+        <div class="context-item ${isProtected ? "disabled" : ""}" onclick="${
+            isProtected ? "" : "startRename(); hideContextMenu();"
+        }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
             Rename
         </div>
-        <div class="context-item danger" onclick="handleDelete(); hideContextMenu();">
+        <div class="context-item danger ${
+            isProtected ? "disabled" : ""
+        }" onclick="${isProtected ? "" : "handleDelete(); hideContextMenu();"}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
             Delete
         </div>
@@ -2592,6 +2665,15 @@ function showProperties() {
 
     const model = getPropertiesModel(item);
     renderPropertiesModal(model);
+}
+
+function showProtectedFolderAlert(action) {
+    const messages = {
+        delete: "Systeemmap kan niet verwijderd worden.",
+        rename: "Systeemmap kan niet hernoemd worden.",
+        move: "Systeemmap kan niet verplaatst worden.",
+    };
+    alert(messages[action] || "Systeemmap kan niet worden aangepast.");
 }
 
 // File Viewer

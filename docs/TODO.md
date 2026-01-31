@@ -1,36 +1,5 @@
 # TECHNISCHE TODO — Next Phase (post-refactor)
 
-## TODO 05 — Protected system folders: Desktop/Downloads/Documents niet verplaatsbaar/hernoembaar/verwijderbaar
-
-**Doel**
-Voorkom dat leerlingen de basisstructuur slopen (en reduceer frustratie + bugs).
-
-**Beschrijving**
-
-- Definieer `PROTECTED_FOLDERS = ["C:/Desktop","C:/Documents","C:/Downloads"]`.
-- Blokkeer acties op deze folders:
-    - delete
-    - rename
-    - move (cut/paste)
-
-- Toon een duidelijke melding waarom het niet kan (“Systeemmap kan niet verwijderd worden”).
-- (Optioneel) Laat wél bestanden _in_ die mappen manipuleren (afhankelijk van didactisch doel).
-
-**Succescriteria**
-
-- Acties op protected folders worden altijd geweigerd.
-- Geen crashes/inconsistente state.
-- Melding verschijnt en UI blijft bruikbaar.
-
-**Nodige files**
-
-- `/src/core/script-core.js`
-- `/src/core/style.css`
-- `/src/teacher/exercise-configurator.html`
-- `/src/student/index.html`
-
----
-
 ## TODO 06 — Checks uitbreiden: folder-not-exists + folder moved/renamed (state-based)
 
 **Doel**
@@ -89,15 +58,13 @@ Oefeningen rond comprimeren/uitpakken kunnen automatisch beoordeeld worden.
 ## TODO 08 — Auto task descriptions verbeteren + toggle “toon paden”
 
 **Doel**
-Taken zijn duidelijker voor leerlingen en bruikbaar voor leerkrachten (basis vs pro).
+Taken zijn duidelijker voor leerlingen en bruikbaar voor leerkrachten. De taken bevatten een duidelijke instructie (verwijder, verplaats, kopieer, comprimeer, hernoem...) en een duidelijke beschrijven van de startbestanden.
 
 **Beschrijving**
 
 - Upgrade generator van standaardbeschrijvingen:
-    - voeg bestandspaden toe (C:\… of OneDrive\…)
+    - voeg bestandspaden toe (C:\… of OneDrive\…), zowel bij startlocatie als bij doellocatie (bij verplaatsen / kopiëren)
     - betere werkwoorden (“Verplaats”, “Hernoem”, “Pak uit”, “Herstel”)
-
-- Voeg teacher-toggle toe: “Toon paden in omschrijving” (easy/hard).
 
 **Succescriteria**
 
