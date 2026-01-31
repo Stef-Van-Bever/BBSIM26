@@ -124,6 +124,7 @@ function initStudentAttemptPersistence() {
     const k = getAttemptSessionKey();
     if (!sessionStorage.getItem(k)) {
         clearLatestCheckResults(); // prevents "instant green" on new attempt
+        clearStudentChecklistState(); // prevents carrying manual checks to new attempt
         sessionStorage.setItem(k, "1");
     }
 }
@@ -175,6 +176,60 @@ function readLatestCheckResults() {
 function clearLatestCheckResults() {
     try {
         localStorage.removeItem(getLatestCheckResultsKey());
+    } catch (e) {
+        // ignore
+    }
+}
+
+function isStudentChecklistEnabled() {
+    const cfg = getExerciseConfig();
+    return window.APP_MODE !== "teacher" && !!cfg?.studentChecklistEnabled;
+}
+
+function getStudentChecklistKey() {
+    const cfg = getExerciseConfig();
+    const title = cfg?.meta?.title || "untitled";
+    return `studentChecklist_v1__${title}`;
+}
+
+function normalizeStudentChecklistState(count, state) {
+    const normalized = Array.isArray(state) ? state.slice(0, count) : [];
+    while (normalized.length < count) normalized.push(false);
+    return normalized.map((v) => !!v);
+}
+
+function persistStudentChecklistState(state) {
+    if (window.APP_MODE === "teacher") return;
+    if (!isStudentChecklistEnabled()) return;
+
+    try {
+        localStorage.setItem(
+            getStudentChecklistKey(),
+            JSON.stringify(state || []),
+        );
+    } catch (e) {
+        debugLog("Could not persist student checklist state", e);
+    }
+}
+
+function readStudentChecklistState() {
+    if (window.APP_MODE === "teacher") return null;
+    if (!isStudentChecklistEnabled()) return null;
+
+    try {
+        const raw = localStorage.getItem(getStudentChecklistKey());
+        if (!raw) return null;
+
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function clearStudentChecklistState() {
+    try {
+        localStorage.removeItem(getStudentChecklistKey());
     } catch (e) {
         // ignore
     }
@@ -456,13 +511,30 @@ function buildInstructionChecklistFromTasks(tasks) {
     const checklistEl = document.getElementById("instructionChecklist");
     checklistEl.innerHTML = "";
 
+    const checklistEnabled = isStudentChecklistEnabled();
+    studentChecklistState = checklistEnabled
+        ? normalizeStudentChecklistState(
+              tasks.length,
+              readStudentChecklistState(),
+          )
+        : [];
+
     tasks.forEach((task, index) => {
         const li = document.createElement("li");
         li.className = "instruction-item";
 
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
-        checkbox.disabled = true;
+        checkbox.disabled = !checklistEnabled;
+
+        if (checklistEnabled) {
+            checkbox.checked = !!studentChecklistState[index];
+            checkbox.addEventListener("change", () => {
+                if (checkbox.disabled) return;
+                studentChecklistState[index] = !!checkbox.checked;
+                persistStudentChecklistState(studentChecklistState);
+            });
+        }
 
         const label = document.createElement("label");
         label.className = "instruction-text";
@@ -476,10 +548,21 @@ function buildInstructionChecklistFromTasks(tasks) {
 
 // Reset helpers
 function resetChecklist() {
-    document
-        .querySelectorAll('#instructionChecklist input[type="checkbox"]')
-        .forEach((cb) => {
+    const checklistEnabled = isStudentChecklistEnabled();
+    const checkboxes = document.querySelectorAll(
+        '#instructionChecklist input[type="checkbox"]',
+    );
+
+    if (checklistEnabled) {
+        studentChecklistState = normalizeStudentChecklistState(
+            checkboxes.length,
+            null,
+        );
+    }
+
+    checkboxes.forEach((cb) => {
             cb.checked = false;
+            cb.disabled = !checklistEnabled;
             cb.closest(".instruction-item")?.classList.remove(
                 "completed",
                 "status-success",
@@ -508,6 +591,7 @@ function resetAssignment() {
 
     // --- Clear persisted states ---
     clearLatestCheckResults();
+    clearStudentChecklistState();
     clearStudentSessionState();
 
     // IMPORTANT:
@@ -715,6 +799,7 @@ let viewMode = "grid";
 let renamingItem = null;
 let recycleBin = []; // Stores deleted items with their original paths
 let sidePanelVisible = false;
+let studentChecklistState = [];
 let deleteContext = {
     mode: "soft", // "soft" | "permanent"
     itemName: null,
@@ -2830,6 +2915,7 @@ function requestCloseActiveModalFromEscape() {
 
 function updateChecklistFromResults(results) {
     const items = document.querySelectorAll(".instruction-item");
+    const checklistEnabled = isStudentChecklistEnabled();
 
     results.forEach((task, index) => {
         const li = items[index];
@@ -2845,7 +2931,22 @@ function updateChecklistFromResults(results) {
         const hasAnyPass = passedCount > 0;
         const allPass = checks.length > 0 && passedCount === checks.length;
 
-        if (checkbox) checkbox.checked = completed;
+        if (checkbox) {
+            if (checklistEnabled) {
+                if (completed) {
+                    checkbox.checked = true;
+                    checkbox.disabled = true;
+                    studentChecklistState[index] = true;
+                } else {
+                    checkbox.checked = false;
+                    checkbox.disabled = false;
+                    studentChecklistState[index] = false;
+                }
+            } else {
+                checkbox.checked = completed;
+                checkbox.disabled = true;
+            }
+        }
 
         li.classList.toggle("completed", completed);
 
@@ -2857,4 +2958,8 @@ function updateChecklistFromResults(results) {
             li.classList.add("status-fail");
         }
     });
+
+    if (checklistEnabled) {
+        persistStudentChecklistState(studentChecklistState);
+    }
 }

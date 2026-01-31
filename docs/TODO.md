@@ -1,33 +1,5 @@
 # TECHNISCHE TODO — Next Phase (post-refactor)
 
-## TODO 04 — Student tasklist: optioneel “afvinkbaar” (los van automatische checks)
-
-**Doel**
-Leerlingen kunnen hun werk plannen/afvinken zonder de evaluatie te beïnvloeden.
-
-**Beschrijving**
-
-- Voeg per task een `userChecked` state toe
-- UI: checkbox die leerling kan toggelen.
-- Loskoppeling: `userChecked` ≠ `completedByChecks`.
-- Optie in config: `studentChecklistEnabled: true/false`.
-
-**Succescriteria**
-
-- Automatische “completed” blijft onafhankelijk groen worden.
-- Als de task na de check completed is, blijft de checked status staan en kan niet meer uitgevinkt worden
-- als de task na de check niet compleet is (of incorrect) wordt die automatisch uitgevinkt, waarna de leerling die terug kan aanvinken wanneer die wil.
-
-**Nodige files**
-
-- `/src/core/script-core.js`
-- `/src/student/script-student.js`
-- `/src/config/exercise-config.json` (of jouw config bron)
-- `/src/student/index.html` (tasklist template indien nodig)
-- `/src/core/style.css`
-
----
-
 ## TODO 05 — Protected system folders: Desktop/Downloads/Documents niet verplaatsbaar/hernoembaar/verwijderbaar
 
 **Doel**
