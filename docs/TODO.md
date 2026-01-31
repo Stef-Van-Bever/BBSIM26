@@ -20,11 +20,11 @@ Leerlingen kunnen hun werk plannen/afvinken zonder de evaluatie te beïnvloeden.
 
 **Nodige files**
 
-- `/mnt/data/script-core.js`
-- `/mnt/data/script-student.js`
-- `/mnt/data/exercise-config.json` (of jouw config bron)
-- `/mnt/data/index.html` (tasklist template indien nodig)
-- `/mnt/data/style.css`
+- `/src/core/script-core.js`
+- `/src/student/script-student.js`
+- `/src/config/exercise-config.json` (of jouw config bron)
+- `/src/student/index.html` (tasklist template indien nodig)
+- `/src/core/style.css`
 
 ---
 
@@ -35,7 +35,7 @@ Voorkom dat leerlingen de basisstructuur slopen (en reduceer frustratie + bugs).
 
 **Beschrijving**
 
-- Definieer `PROTECTED_FOLDERS = ["Desktop","Documents","Downloads"]`.
+- Definieer `PROTECTED_FOLDERS = ["C:/Desktop","C:/Documents","C:/Downloads"]`.
 - Blokkeer acties op deze folders:
     - delete
     - rename
@@ -52,8 +52,10 @@ Voorkom dat leerlingen de basisstructuur slopen (en reduceer frustratie + bugs).
 
 **Nodige files**
 
-- `/mnt/data/script-core.js`
-- `/mnt/data/style.css` (optioneel)
+- `/src/core/script-core.js`
+- `/src/core/style.css`
+- `/src/teacher/exercise-configurator.html`
+- `/src/student/index.html`
 
 ---
 
@@ -79,9 +81,9 @@ Meer oefeningstypes kunnen evalueren zonder grote architectuurwijziging.
 
 **Nodige files**
 
-- `/mnt/data/script-core.js` (evaluateCheck uitbreiding)
-- `/mnt/data/checks.md` (documentatie updaten)
-- `/mnt/data/script-teacher.js` (UI/serializer indien nodig)
+- `/src/core/script-core.js` (evaluateCheck uitbreiding)
+- `/docs/checks.md` (documentatie updaten)
+- `/src/teacher/script-teacher.js` (UI/serializer indien nodig)
 
 ---
 
@@ -107,8 +109,8 @@ Oefeningen rond comprimeren/uitpakken kunnen automatisch beoordeeld worden.
 
 **Nodige files**
 
-- `/mnt/data/script-core.js`
-- `/mnt/data/checks.md`
+- `/src/core/script-core.js`
+- `/docs/checks.md`
 
 ---
 
@@ -133,9 +135,9 @@ Taken zijn duidelijker voor leerlingen en bruikbaar voor leerkrachten (basis vs 
 
 **Nodige files**
 
-- `/mnt/data/script-teacher.js`
-- `/mnt/data/exercise-configurator.html`
-- `/mnt/data/style.css`
+- `/src/teacher/script-teacher.js`
+- `/src/teacher/exercise-configurator.html`
+- `/src/core/style.css`
 
 ---
 
@@ -158,9 +160,9 @@ Leerlingen met slecht zicht kunnen comfortabel werken.
 
 **Nodige files**
 
-- `/mnt/data/index.html` (knoppen plaatsen)
-- `/mnt/data/style.css` (variabelen / classes)
-- `/mnt/data/script-core.js` (toggle + persist)
+- `/src/student/index.html` (knoppen plaatsen)
+- `/src/core/style.css` (variabelen / classes)
+- `/src/score/script-core.js` (toggle + persist)
 
 ---
 
@@ -189,9 +191,9 @@ Voorkom dat leerlingen rommel maken en toch hoge score halen.
 
 **Nodige files**
 
-- `/mnt/data/script-core.js`
-- `/mnt/data/exercise-config.json` (rules toevoegen)
-- `/mnt/data/script-student.js` (indien submit/check flow daar zit)
+- `/src/core/script-core.js`
+- `/src/teacher/exercise-config.json` (rules toevoegen)
+- `/src/student/script-student.js` (indien submit/check flow daar zit)
 
 ---
 
@@ -214,11 +216,11 @@ Meertalige ondersteuning zonder overal hardcoded tekst.
 
 **Nodige files**
 
-- `/mnt/data/script-core.js`
-- `/mnt/data/index.html`
-- `/mnt/data/style.css` (optioneel voor language toggle)
-- `/mnt/data/script-teacher.js` (teacher UI strings)
-- `/mnt/data/exercise-configurator.html`
+- `/src/core/script-core.js`
+- `/src/student/index.html`
+- `/src/core/style.css` (optioneel voor language toggle)
+- `/src/teacher/script-teacher.js` (teacher UI strings)
+- `/src/teacher/exercise-configurator.html`
 
 ---
 
@@ -242,8 +244,8 @@ Meer Windows-realistische interactie.
 
 **Nodige files**
 
-- `/mnt/data/script-core.js`
-- `/mnt/data/style.css`
+- `/src/core/script-core.js`
+- `/src/core/style.css`
 
 ---
 
@@ -263,9 +265,9 @@ Leerkracht kan UI “coachend” of “minimalistisch” maken.
 
 **Nodige files**
 
-- `/mnt/data/script-teacher.js`
-- `/mnt/data/exercise-configurator.html`
-- `/mnt/data/style.css`
+- `/src/teacher/script-teacher.js`
+- `/src/teacher/exercise-configurator.html`
+- `/src/core/style.css`
 
 ---
 
@@ -287,10 +289,9 @@ Van JSON export naar “1 klik SCORM upload”.
 
 **Nodige files**
 
-- `/mnt/data/script-teacher.js` (export pipeline)
-- `/mnt/data/exercise-configurator.html`
-- (nieuw) `/mnt/data/imsmanifest.template.xml`
-- (nieuw) `/mnt/data/vendor/jszip.min.js` of bundling oplossing
+- `/src/teacher/script-teacher.js` (export pipeline)
+- `/src/teacher/exercise-configurator.html`
+- (nieuw) `/scorm/imsmanifest.template.xml`
 
 ---
 
@@ -310,8 +311,8 @@ Leerlingen snappen waarom zoeken niet werkt (indien uitgeschakeld).
 
 **Nodige files**
 
-- `/mnt/data/index.html`
-- `/mnt/data/style.css`
-- `/mnt/data/script-core.js`
+- `/src/student/index.html`
+- `/src/core/style.css`
+- `/src/core/script-core.js`
 
 ---
