@@ -1,77 +1,78 @@
 {
-  "meta": {
-    "title": "Untitled exercise",
-    "description": ""
-  },
-  "initialStructure": {
-    "name": "This PC",
-    "type": "system",
-    "roots": [
-      {
-        "name": "C:",
-        "type": "folder",
-        "meta": {
-          "kind": "drive",
-          "displayName": "Lokale schijf (C:)"
-        },
-        "children": [
-          {
-            "name": "Documents",
-            "type": "folder",
-            "children": []
-          },
-          {
-            "name": "Downloads",
-            "type": "folder",
-            "children": []
-          },
-          {
-            "name": "Desktop",
-            "type": "folder",
-            "children": []
-          }
-        ]
-      },
-      {
-        "name": "OneDrive",
-        "type": "folder",
-        "meta": {
-          "kind": "cloud",
-          "displayName": "OneDrive"
-        },
-        "children": [
-          {
-            "name": "Documents",
-            "type": "folder",
-            "children": []
-          },
-          {
-            "name": "Pictures",
-            "type": "folder",
-            "children": []
-          }
-        ]
-      }
-    ]
-  },
-  "tasks": [
-    {
-      "description": "Maak een nieuwe map \"Test\" op de juiste plaats.",
-      "checks": [
-        {
-          "type": "folder-exists",
-          "path": "C:\\Test"
-        }
-      ]
+    "meta": {
+        "title": "Untitled exercise",
+        "description": ""
     },
-    {
-      "description": "Maak een nieuw bestand \"Test2\" op de juiste plaats.",
-      "checks": [
+    "studentChecklistEnabled": true,
+    "initialStructure": {
+        "name": "This PC",
+        "type": "system",
+        "roots": [
+            {
+                "name": "C:",
+                "type": "folder",
+                "meta": {
+                    "kind": "drive",
+                    "displayName": "Lokale schijf (C:)"
+                },
+                "children": [
+                    {
+                        "name": "Documents",
+                        "type": "folder",
+                        "children": []
+                    },
+                    {
+                        "name": "Downloads",
+                        "type": "folder",
+                        "children": []
+                    },
+                    {
+                        "name": "Desktop",
+                        "type": "folder",
+                        "children": []
+                    }
+                ]
+            },
+            {
+                "name": "OneDrive",
+                "type": "folder",
+                "meta": {
+                    "kind": "cloud",
+                    "displayName": "OneDrive"
+                },
+                "children": [
+                    {
+                        "name": "Documents",
+                        "type": "folder",
+                        "children": []
+                    },
+                    {
+                        "name": "Pictures",
+                        "type": "folder",
+                        "children": []
+                    }
+                ]
+            }
+        ]
+    },
+    "tasks": [
         {
-          "type": "file-exists",
-          "path": "OneDrive\\Documents\\Test2"
+            "description": "Maak een nieuwe map \"Test\" op de juiste plaats.",
+            "checks": [
+                {
+                    "type": "folder-exists",
+                    "path": "C:\\Test"
+                }
+            ]
+        },
+        {
+            "description": "Maak een nieuw bestand \"Test2\" op de juiste plaats.",
+            "checks": [
+                {
+                    "type": "file-exists",
+                    "path": "OneDrive\\Documents\\Test2"
+                }
+            ]
         }
-      ]
-    }
-  ]
+    ]
 }
