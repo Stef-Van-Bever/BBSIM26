@@ -45,7 +45,7 @@
 
 // Debug logging (disabled by default)
 // Enable via: window.DEBUG_LOGS = true;
-window.DEBUG_LOGS = window.DEBUG_LOGS ?? true;
+window.DEBUG_LOGS = window.DEBUG_LOGS ?? false;
 window.debugLog =
     window.debugLog ??
     function debugLog(...args) {

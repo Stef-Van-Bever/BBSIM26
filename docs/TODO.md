@@ -162,7 +162,7 @@ Leerlingen met slecht zicht kunnen comfortabel werken.
 
 - `/src/student/index.html` (knoppen plaatsen)
 - `/src/core/style.css` (variabelen / classes)
-- `/src/score/script-core.js` (toggle + persist)
+- `/src/core/script-core.js` (toggle + persist)
 
 ---
 
