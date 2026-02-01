@@ -289,3 +289,39 @@ Example:
 "type": "folder-permanently-deleted",
 "path": "C:\\Temp"
 }
+
+### zip-exists
+
+Checks if a zip file exists at the given path (path must end with `.zip`).
+
+Example:
+{
+"type": "zip-exists",
+"path": "C:\\Downloads\\Archive.zip"
+}
+
+### zip-contains
+
+Checks if a zip file's `zipMeta.entries` includes the expected entries.
+`mode: "all"` means all entries must be present, `mode: "any"` means at least one.
+
+Example:
+{
+"type": "zip-contains",
+"zipPath": "C:\\Downloads\\Archive.zip",
+"entries": ["Docs", "img.png"],
+"mode": "all"
+}
+
+### zip-extracted-to
+
+Checks if a zip was extracted to a destination folder, by verifying the destination
+folder exists and contains the expected top-level entries (files or folders).
+
+Example:
+{
+"type": "zip-extracted-to",
+"zipPath": "C:\\Downloads\\Archive.zip",
+"destinationFolder": "C:\\Docs\\Archive",
+"expectEntries": ["Docs", "img.png"]
+}

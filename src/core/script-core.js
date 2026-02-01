@@ -742,6 +742,13 @@ function fileExists(path) {
     return folder?.children?.some((c) => c.name === fileName);
 }
 
+function getFileByPath(path) {
+    const folderPath = getParentPath(path);
+    const fileName = getNameFromPath(path);
+    const folder = getFolder(folderPath);
+    return folder?.children?.find((c) => c.name === fileName) || null;
+}
+
 function recycleBinHasItem(type, path) {
     if (!path || !type) return false;
     if (!Array.isArray(recycleBin)) return false;
@@ -888,6 +895,73 @@ function evaluateCheck(check) {
                 !recycleBinHasItem("folder", check.path)
             );
 
+        case "zip-exists":
+            if (!requireCheckFields(check, ["path"])) return false;
+            if (!check.path.endsWith(".zip")) return false;
+            const zipItem = getFileByPath(check.path);
+            return !!zipItem?.isZip;
+
+        case "zip-contains": {
+            if (!requireCheckFields(check, ["zipPath", "entries"])) return false;
+            const zipItem = getFileByPath(check.zipPath);
+            if (!zipItem || !zipItem.name?.endsWith(".zip")) return false;
+            if (!zipItem.zipMeta || !Array.isArray(zipItem.zipMeta.entries)) {
+                console.warn("zip-contains check: zipMeta missing", check);
+                return false;
+            }
+
+            const entries = Array.isArray(check.entries) ? check.entries : [];
+            const mode = check.mode === "any" ? "any" : "all";
+
+            if (mode === "any") {
+                return entries.some((e) => zipItem.zipMeta.entries.includes(e));
+            }
+
+            return entries.every((e) => zipItem.zipMeta.entries.includes(e));
+        }
+
+        case "zip-extracted-to": {
+            if (
+                !requireCheckFields(check, [
+                    "zipPath",
+                    "destinationFolder",
+                    "expectEntries",
+                ])
+            ) {
+                return false;
+            }
+
+            if (!fileExists(check.zipPath)) return false;
+            if (!folderExists(check.destinationFolder)) return false;
+
+            const expected = Array.isArray(check.expectEntries)
+                ? check.expectEntries
+                : [];
+
+            return expected.every((entry) => {
+                if (typeof entry === "string") {
+                    const entryPath = joinPathMultiRoot(
+                        check.destinationFolder,
+                        entry,
+                    );
+                    return fileExists(entryPath) || folderExists(entryPath);
+                }
+
+                if (!entry || typeof entry !== "object") return false;
+                if (!entry.name || !entry.type) return false;
+
+                const entryPath = joinPathMultiRoot(
+                    check.destinationFolder,
+                    entry.name,
+                );
+
+                if (entry.type === "file") return fileExists(entryPath);
+                if (entry.type === "folder") return folderExists(entryPath);
+
+                return false;
+            });
+        }
+
         default:
             debugLog("Unknown check type:", check.type);
             return false;
@@ -933,6 +1007,16 @@ let studentChecklistState = [];
 let deleteContext = {
     mode: "soft", // "soft" | "permanent"
     itemName: null,
+};
+let isProgressRunning = false;
+let extractWizardState = {
+    zipName: null,
+    zipParentPath: null,
+    destinationPath: null,
+    showAfterComplete: true,
+};
+let folderPickerState = {
+    selectedPath: null,
 };
 
 // ============================================================================
@@ -1165,6 +1249,21 @@ function bindModalEvents() {
     safeOn("closeFileViewerBtn", "click", () => hideModal("fileViewerModal"));
     safeOn("cancelNewItemBtn", "click", () => hideModal("newItemModal"));
     safeOn("createNewItemBtn", "click", createNewItem);
+    safeOn("cancelExtractWizardBtn", "click", () =>
+        hideModal("extractWizardModal"),
+    );
+    safeOn("confirmExtractWizardBtn", "click", confirmExtractToDestination);
+    safeOn("extractBrowseBtn", "click", openFolderPicker);
+    safeOn("cancelFolderPickerBtn", "click", () =>
+        hideModal("folderPickerModal"),
+    );
+    safeOn("confirmFolderPickerBtn", "click", confirmFolderPickerSelection);
+    safeOn("folderPickerList", "click", (e) => {
+        const item = e.target.closest(".folder-picker-item");
+        if (!item) return;
+        folderPickerState.selectedPath = item.dataset.path || null;
+        renderFolderPicker();
+    });
 }
 
 function bindGlobalEvents() {
@@ -1899,6 +1998,11 @@ function getFileIcon(item) {
 }
 
 function updateNavigationButtons() {
+    if (isProgressRunning) {
+        setToolbarButtonsDisabled(true);
+        return;
+    }
+
     withEl("backBtn", (btn) => (btn.disabled = historyIndex <= 0));
     withEl(
         "forwardBtn",
@@ -1907,7 +2011,18 @@ function updateNavigationButtons() {
     withEl("upBtn", (btn) => (btn.disabled = currentPath === "C:"));
 }
 
+function setToolbarButtonsDisabled(disabled) {
+    document.querySelectorAll(".toolbar button").forEach((btn) => {
+        btn.disabled = disabled;
+    });
+}
+
 function updateToolbarState() {
+    if (isProgressRunning) {
+        setToolbarButtonsDisabled(true);
+        return;
+    }
+
     const hasSelection = selectedItems.length > 0;
     const isThisPC = currentPath === "This PC";
     const hasClipboard = clipboard !== null;
@@ -2052,6 +2167,18 @@ function beginRenamingSelectedItem() {
         input.select();
     }
     return true;
+}
+
+function startRenameAfterNextRender() {
+    if (exerciseSubmitted) return;
+    if (currentPath === "Recycle Bin") return;
+    if (selectedItems.length !== 1) return;
+
+    requestAnimationFrame(() => {
+        if (exerciseSubmitted) return;
+        if (currentPath === "Recycle Bin") return;
+        beginRenamingSelectedItem();
+    });
 }
 
 function cancelRenaming() {
@@ -2464,7 +2591,7 @@ function getDefaultZipNameForItems(items) {
     return "Archive.zip";
 }
 
-function addZipFileToCurrentFolder(zipName, compressedContents) {
+function addZipFileToCurrentFolder(zipName, compressedContents, zipMeta) {
     const folder = getCurrentFolder();
 
     const zipItem = {
@@ -2473,6 +2600,9 @@ function addZipFileToCurrentFolder(zipName, compressedContents) {
         isZip: true,
         compressedContents: deepClone(compressedContents),
     };
+    if (zipMeta) {
+        zipItem.zipMeta = zipMeta;
+    }
 
     // INVARIANT (SYSTEM OPERATION):
     // Compress MUST auto-resolve name conflicts for the generated .zip output.
@@ -2481,51 +2611,254 @@ function addZipFileToCurrentFolder(zipName, compressedContents) {
     return zipItem.name; // actual final name after conflict resolution
 }
 
-function extractZipIntoCurrentFolder(zipFile) {
-    // INVARIANT: keep existing guard
+function extractZipToFolder(zipFile, destinationPath) {
     if (
-        !zipFile.compressedContents ||
+        !zipFile?.compressedContents ||
         zipFile.compressedContents.length === 0
     ) {
+        return null;
+    }
+
+    const destinationFolder = getFolder(destinationPath);
+    if (!destinationFolder) return null;
+
+    const contents = deepClone(zipFile.compressedContents);
+    const addedNames = [];
+
+    contents.forEach((item) => {
+        addWithUniqueName(destinationFolder.children, item);
+        addedNames.push(item.name);
+    });
+
+    return { mode: "items", names: addedNames };
+}
+
+function extractZipIntoCurrentFolder(zipFile) {
+    extractZipToFolder(zipFile, currentPath);
+}
+
+function getDefaultExtractDestinationPath() {
+    const roots = fileSystem?.roots || [];
+    const preferredRoot = getDefaultRootPath(fileSystem);
+
+    if (preferredRoot && preferredRoot !== currentPath) {
+        return preferredRoot;
+    }
+
+    const otherRoot = roots.find((r) => r.name !== currentPath);
+    if (otherRoot) return otherRoot.name;
+
+    const currentFolder = getFolder(currentPath);
+    const firstChildFolder = currentFolder?.children?.find(
+        (child) => child.type === "folder",
+    );
+    if (firstChildFolder) {
+        return joinPathMultiRoot(currentPath, firstChildFolder.name);
+    }
+
+    return null;
+}
+
+function shouldShowExtractWizardWarning(destinationPath) {
+    if (!destinationPath) return false;
+    if (currentPath === "This PC" || currentPath === "Recycle Bin") return false;
+    return destinationPath === currentPath;
+}
+
+function updateExtractWizardUI() {
+    const input = document.getElementById("extractDestinationInput");
+    if (input) {
+        input.value = extractWizardState.destinationPath || "";
+    }
+
+    const checkbox = document.getElementById("extractShowAfterCheckbox");
+    if (checkbox) {
+        checkbox.checked = !!extractWizardState.showAfterComplete;
+    }
+
+    const warning = document.getElementById("extractWizardWarning");
+    if (warning) {
+        warning.classList.toggle(
+            "hidden",
+            !shouldShowExtractWizardWarning(extractWizardState.destinationPath),
+        );
+    }
+}
+
+function buildFolderPickerItems(folder, path, level, selectedPath) {
+    const isSelected = path === selectedPath;
+    let html = `
+        <div class="folder-picker-item ${
+            isSelected ? "selected" : ""
+        }" data-path="${path}" style="--level: ${level}">
+            ${getNameFromPath(path)}
+        </div>
+    `;
+
+    const children = folder.children?.filter((c) => c.type === "folder") || [];
+    children.forEach((child) => {
+        const childPath = joinPathMultiRoot(path, child.name);
+        html += buildFolderPickerItems(
+            child,
+            childPath,
+            level + 1,
+            selectedPath,
+        );
+    });
+
+    return html;
+}
+
+function renderFolderPicker() {
+    const listEl = document.getElementById("folderPickerList");
+    if (!listEl) return;
+
+    const roots = fileSystem?.roots || [];
+    if (roots.length === 0) {
+        listEl.innerHTML = `<div class="folder-picker-empty">No folders available.</div>`;
         return;
     }
 
-    const folder = getCurrentFolder();
-    const baseFolderName = zipFile.name.replace(".zip", "");
+    let html = "";
+    roots.forEach((root) => {
+        const path = root.name;
+        html += buildFolderPickerItems(
+            root,
+            path,
+            0,
+            folderPickerState.selectedPath,
+        );
+    });
 
-    const extractedFolder = {
-        name: baseFolderName,
-        type: "folder",
-        children: deepClone(zipFile.compressedContents),
-    };
+    listEl.innerHTML = html;
+}
 
-    // INVARIANT (SYSTEM OPERATION):
-    // Extract MUST auto-resolve name conflicts (folders/files) via addWithUniqueName/ensureUniqueChildName.
+function openFolderPicker() {
+    folderPickerState.selectedPath = extractWizardState.destinationPath;
+    renderFolderPicker();
+    showModal("folderPickerModal");
+}
 
-    addWithUniqueName(folder.children, extractedFolder);
+function confirmFolderPickerSelection() {
+    if (!folderPickerState.selectedPath) {
+        alert("Selecteer eerst een doelmap.");
+        return;
+    }
+
+    extractWizardState.destinationPath = folderPickerState.selectedPath;
+    updateExtractWizardUI();
+    hideModal("folderPickerModal");
+}
+
+function openExtractWizard(zipItem) {
+    if (!zipItem) return;
+    if (isProgressRunning) return;
+
+    extractWizardState.zipName = zipItem.name;
+    extractWizardState.zipParentPath = currentPath;
+    extractWizardState.destinationPath = getDefaultExtractDestinationPath();
+    extractWizardState.showAfterComplete = true;
+
+    updateExtractWizardUI();
+    showModal("extractWizardModal");
+}
+
+function openExtractWizardForSelectedZip() {
+    if (isProgressRunning) return;
+
+    const items = getSelectedZipItems();
+    if (items.length === 0) return;
+    openExtractWizard(items[0]);
+}
+
+function confirmExtractToDestination() {
+    if (isProgressRunning) return;
+
+    const destinationPath = extractWizardState.destinationPath;
+    if (!destinationPath) {
+        alert("Kies eerst een doelmap om uit te pakken.");
+        return;
+    }
+
+    const destinationFolder = getFolder(destinationPath);
+    if (!destinationFolder) {
+        alert("De gekozen doelmap bestaat niet (meer).");
+        return;
+    }
+
+    const zipParentFolder = getFolder(extractWizardState.zipParentPath);
+    const zipFile = zipParentFolder?.children?.find(
+        (item) =>
+            item.name === extractWizardState.zipName && item.name.endsWith(".zip"),
+    );
+    if (!zipFile) {
+        alert("Het zipbestand werd niet gevonden.");
+        return;
+    }
+
+    extractWizardState.showAfterComplete = !!document.getElementById(
+        "extractShowAfterCheckbox",
+    )?.checked;
+
+    hideModal("extractWizardModal");
+
+    runWithProgress({
+        title: "Extracting...",
+        durationMs: 2000,
+        action: () => {
+            const extractedResult = extractZipToFolder(
+                zipFile,
+                destinationPath,
+            );
+
+            if (!extractedResult) return;
+
+            if (extractWizardState.showAfterComplete) {
+                navigate(destinationPath);
+                selectedItems = extractedResult.names;
+                renderAll();
+                return;
+            }
+
+            if (destinationPath === currentPath) {
+                selectedItems = extractedResult.names;
+                renderAll();
+            }
+        },
+    });
 }
 
 // Compress/Extract
 function handleCompress() {
+    if (isProgressRunning) return;
+
     const items = getSelectedNonZipItems();
     if (items.length === 0) return;
 
-    const zipName = getDefaultZipNameForItems(items);
-    const finalZipName = addZipFileToCurrentFolder(zipName, items);
+    runWithProgress({
+        title: "Compressing...",
+        durationMs: 2000,
+        action: () => {
+            const zipName = getDefaultZipNameForItems(items);
+            const zipMeta = {
+                entries: items.map((item) => item.name),
+                createdFromPath: currentPath,
+            };
+            const finalZipName = addZipFileToCurrentFolder(
+                zipName,
+                items,
+                zipMeta,
+            );
 
-    selectedItems = [finalZipName];
-    renderAll();
+            selectedItems = [finalZipName];
+            renderAll();
+            startRenameAfterNextRender();
+        },
+    });
 }
 
 function handleExtract() {
-    const items = getSelectedZipItems();
-    if (items.length === 0) return;
-
-    items.forEach((zipFile) => {
-        extractZipIntoCurrentFolder(zipFile);
-    });
-
-    renderAll();
+    openExtractWizardForSelectedZip();
 }
 
 // New Item
@@ -2606,7 +2939,7 @@ function buildContextMenuForItem(item) {
         <div class="context-divider"></div>
         ${
             isZip
-                ? `<div class="context-item" onclick="handleExtract(); hideContextMenu();">
+                ? `<div class="context-item" onclick="openExtractWizardForSelectedZip(); hideContextMenu();">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><path d="M12 11v6M9 14h6"/></svg>
                 Extract All...
                </div>`
@@ -2658,6 +2991,8 @@ function buildContextMenuForEmptyArea() {
 
 // Context Menu
 function showContextMenu(x, y, item) {
+    if (isProgressRunning) return;
+
     const adjustedX = Math.min(x, window.innerWidth - 200);
     const adjustedY = Math.min(y, window.innerHeight - 300);
 
@@ -2782,9 +3117,15 @@ function showProtectedFolderAlert(action) {
 
 // File Viewer
 function showFileViewer(item) {
-    document.getElementById("fileViewerTitle").textContent = item.name;
+    const isZip = item.name?.endsWith(".zip") || item.isZip;
+    document.getElementById("fileViewerTitle").textContent = isZip
+        ? "Archive contents"
+        : item.name;
 
-    if (item.content) {
+    if (isZip) {
+        document.getElementById("fileViewerContent").innerHTML =
+            buildArchiveViewerHtml(item);
+    } else if (item.content) {
         document.getElementById("fileViewerContent").innerHTML =
             `<pre>${item.content}</pre>`;
     } else {
@@ -2799,6 +3140,56 @@ function showFileViewer(item) {
     }
 
     showModal("fileViewerModal");
+}
+
+function buildArchiveViewerHtml(item) {
+    const contents = Array.isArray(item.compressedContents)
+        ? item.compressedContents
+        : [];
+
+    if (contents.length === 0) {
+        return `
+            <div class="archive-viewer-empty">
+                <p>Archive is empty.</p>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="archive-viewer">
+            ${renderArchiveTree(contents)}
+        </div>
+    `;
+}
+
+function renderArchiveTree(items) {
+    const sorted = (items || []).slice().sort((a, b) => {
+        if (a.type === b.type) return a.name.localeCompare(b.name);
+        return a.type === "folder" ? -1 : 1;
+    });
+
+    const listItems = sorted
+        .map((item) => {
+            if (item.type === "folder") {
+                return `
+                    <li class="archive-node folder">
+                        <details>
+                            <summary>${item.name}</summary>
+                            ${renderArchiveTree(item.children || [])}
+                        </details>
+                    </li>
+                `;
+            }
+
+            return `
+                <li class="archive-node file">
+                    <span>${item.name}</span>
+                </li>
+            `;
+        })
+        .join("");
+
+    return `<ul class="archive-tree">${listItems}</ul>`;
 }
 
 //evaluation
@@ -3055,6 +3446,59 @@ function hideAllModals() {
         .forEach((m) => m.classList.remove("active"));
     modalOverlayEl.classList.remove("active");
     modalOverlayEl.classList.remove("overlay-closable", "overlay-blocked");
+}
+
+function runWithProgress({ title, durationMs = 2000, action }) {
+    if (isProgressRunning) return;
+
+    const modal = document.getElementById("zipProgressModal");
+    const titleEl = document.getElementById("zipProgressTitle");
+    const barEl = document.getElementById("zipProgressBar");
+
+    const safeDuration = Number.isFinite(durationMs) ? durationMs : 2000;
+
+    isProgressRunning = true;
+    if (typeof hideContextMenu === "function") hideContextMenu();
+    setToolbarButtonsDisabled(true);
+
+    const finalize = () => {
+        try {
+            if (typeof action === "function") action();
+        } finally {
+            if (modal) {
+                hideModal("zipProgressModal");
+            }
+            if (barEl) {
+                barEl.style.transition = "none";
+                barEl.style.width = "0%";
+            }
+            isProgressRunning = false;
+            setToolbarButtonsDisabled(false);
+            updateNavigationButtons();
+            updateToolbarState();
+        }
+    };
+
+    if (!modal || !titleEl || !barEl) {
+        setTimeout(finalize, safeDuration);
+        return;
+    }
+
+    titleEl.textContent = title || "Processing...";
+    barEl.style.transition = "none";
+    barEl.style.width = "0%";
+    // Force reflow so transition restarts reliably
+    // eslint-disable-next-line no-unused-expressions
+    barEl.offsetWidth;
+
+    showModal("zipProgressModal");
+
+    barEl.style.transition = `width ${safeDuration}ms linear`;
+    requestAnimationFrame(() => {
+        barEl.style.width = "100%";
+    });
+
+    setTimeout(finalize, safeDuration);
 }
 
 function shakeModal(modalEl) {

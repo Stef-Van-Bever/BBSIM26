@@ -1133,6 +1133,104 @@ body {
     border-top: 1px solid #e5e7eb;
 }
 
+/* Extract wizard */
+.extract-wizard-text {
+    font-size: 13px;
+    color: #374151;
+    margin-bottom: 14px;
+}
+
+.extract-destination-row label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    display: block;
+    margin-bottom: 6px;
+}
+
+.extract-destination-field {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.extract-destination-field .form-input {
+    flex: 1;
+}
+
+.extract-warning {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    color: #92400e;
+    font-size: 12px;
+}
+
+.extract-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: #374151;
+}
+
+/* Folder picker */
+.folder-picker-list {
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 6px;
+    background: #f9fafb;
+}
+
+.folder-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #374151;
+    padding-left: calc(10px + var(--level, 0) * 16px);
+}
+
+.folder-picker-item:hover {
+    background: #e5f3ff;
+}
+
+.folder-picker-item.selected {
+    background: #cce8ff;
+    color: #1e3a8a;
+}
+
+.folder-picker-empty {
+    padding: 18px;
+    font-size: 12px;
+    color: #6b7280;
+    text-align: center;
+}
+
+/* Progress modal */
+.progress-track {
+    width: 100%;
+    height: 10px;
+    background: #e5e7eb;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #60a5fa 0%, #3b82f6 100%);
+    border-radius: 999px;
+}
+
 /* ==========================================================================
    Modal shake feedback (when overlay click is blocked)
    ========================================================================== */
@@ -1334,6 +1432,73 @@ body {
     margin-bottom: 8px;
 }
 
+/* Archive viewer */
+.archive-viewer {
+    font-size: 13px;
+    color: #374151;
+}
+
+.archive-viewer-empty {
+    text-align: center;
+    color: #6b7280;
+    font-size: 13px;
+    padding: 24px 0;
+}
+
+.archive-tree {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.archive-node {
+    margin: 4px 0;
+}
+
+.archive-node details {
+    margin-left: 0;
+}
+
+.archive-node summary {
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.archive-node summary:hover {
+    background: #e5f3ff;
+}
+
+.archive-node.folder summary::before {
+    content: "📁";
+    font-size: 12px;
+}
+
+.archive-node.file span::before {
+    content: "📄";
+    font-size: 12px;
+    margin-right: 6px;
+}
+
+.archive-node.file span {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 6px;
+    border-radius: 4px;
+}
+
+.archive-node.file span:hover {
+    background: #f3f4f6;
+}
+
+.archive-tree .archive-tree {
+    padding-left: 18px;
+    margin-top: 4px;
+}
+
 /* Form */
 .form-group {
     margin-bottom: 16px;
@@ -1446,6 +1611,43 @@ body {
     border-radius: 12px;
 }
 
+.task-add-panel {
+    margin-bottom: 16px;
+    padding: 12px;
+    border: 1px dashed #d1d5db;
+    border-radius: 10px;
+    background: #f9fafb;
+}
+
+.task-add-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.task-add-select {
+    min-width: 240px;
+}
+
+.task-params {
+    display: grid;
+    gap: 10px;
+}
+
+.task-param-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    margin-bottom: 6px;
+}
+
+.task-entries-input {
+    min-height: 80px;
+}
+
 .task-item {
     padding: 12px;
     border: 1px solid #e5e7eb;
@@ -1454,6 +1656,10 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.task-item .task-param-group {
+    margin-top: 6px;
 }
 
 .task-header {
