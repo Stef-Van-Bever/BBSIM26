@@ -3013,9 +3013,15 @@ function showProtectedFolderAlert(action) {
 
 // File Viewer
 function showFileViewer(item) {
-    document.getElementById("fileViewerTitle").textContent = item.name;
+    const isZip = item.name?.endsWith(".zip") || item.isZip;
+    document.getElementById("fileViewerTitle").textContent = isZip
+        ? "Archive contents"
+        : item.name;
 
-    if (item.content) {
+    if (isZip) {
+        document.getElementById("fileViewerContent").innerHTML =
+            buildArchiveViewerHtml(item);
+    } else if (item.content) {
         document.getElementById("fileViewerContent").innerHTML =
             `<pre>${item.content}</pre>`;
     } else {
@@ -3030,6 +3036,56 @@ function showFileViewer(item) {
     }
 
     showModal("fileViewerModal");
+}
+
+function buildArchiveViewerHtml(item) {
+    const contents = Array.isArray(item.compressedContents)
+        ? item.compressedContents
+        : [];
+
+    if (contents.length === 0) {
+        return `
+            <div class="archive-viewer-empty">
+                <p>Archive is empty.</p>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="archive-viewer">
+            ${renderArchiveTree(contents)}
+        </div>
+    `;
+}
+
+function renderArchiveTree(items) {
+    const sorted = (items || []).slice().sort((a, b) => {
+        if (a.type === b.type) return a.name.localeCompare(b.name);
+        return a.type === "folder" ? -1 : 1;
+    });
+
+    const listItems = sorted
+        .map((item) => {
+            if (item.type === "folder") {
+                return `
+                    <li class="archive-node folder">
+                        <details>
+                            <summary>${item.name}</summary>
+                            ${renderArchiveTree(item.children || [])}
+                        </details>
+                    </li>
+                `;
+            }
+
+            return `
+                <li class="archive-node file">
+                    <span>${item.name}</span>
+                </li>
+            `;
+        })
+        .join("");
+
+    return `<ul class="archive-tree">${listItems}</ul>`;
 }
 
 //evaluation
