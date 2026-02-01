@@ -2498,7 +2498,7 @@ function getDefaultZipNameForItems(items) {
     return "Archive.zip";
 }
 
-function addZipFileToCurrentFolder(zipName, compressedContents) {
+function addZipFileToCurrentFolder(zipName, compressedContents, zipMeta) {
     const folder = getCurrentFolder();
 
     const zipItem = {
@@ -2507,6 +2507,9 @@ function addZipFileToCurrentFolder(zipName, compressedContents) {
         isZip: true,
         compressedContents: deepClone(compressedContents),
     };
+    if (zipMeta) {
+        zipItem.zipMeta = zipMeta;
+    }
 
     // INVARIANT (SYSTEM OPERATION):
     // Compress MUST auto-resolve name conflicts for the generated .zip output.
@@ -2744,7 +2747,15 @@ function handleCompress() {
         durationMs: 2000,
         action: () => {
             const zipName = getDefaultZipNameForItems(items);
-            const finalZipName = addZipFileToCurrentFolder(zipName, items);
+            const zipMeta = {
+                entries: items.map((item) => item.name),
+                createdFromPath: currentPath,
+            };
+            const finalZipName = addZipFileToCurrentFolder(
+                zipName,
+                items,
+                zipMeta,
+            );
 
             selectedItems = [finalZipName];
             renderAll();
