@@ -764,7 +764,7 @@ function recycleBinHasAncestorFolder(path) {
     if (!path) return false;
     if (!Array.isArray(recycleBin)) return false;
 
-    const normalizedPath = normalizePath(path);
+    const normalizedPath = normalizePath(path).toLowerCase();
     if (!normalizedPath) return false;
 
     return recycleBin.some((item) => {
@@ -773,7 +773,7 @@ function recycleBinHasAncestorFolder(path) {
 
         const folderPath = normalizePath(
             joinPathMultiRoot(item.originalPath, item.name),
-        );
+        ).toLowerCase();
         return normalizedPath.startsWith(`${folderPath}\\`);
     });
 }
