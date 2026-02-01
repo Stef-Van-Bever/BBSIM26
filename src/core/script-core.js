@@ -742,6 +742,40 @@ function fileExists(path) {
     return folder?.children?.some((c) => c.name === fileName);
 }
 
+function recycleBinHasItem(type, path) {
+    if (!path || !type) return false;
+    if (!Array.isArray(recycleBin)) return false;
+
+    const name = getNameFromPath(path);
+    const parentPath = getParentPathMultiRoot(path);
+    if (!name || !parentPath) return false;
+
+    const normalizedParent = normalizePath(parentPath);
+    return recycleBin.some(
+        (item) =>
+            item &&
+            item.type === type &&
+            item.name === name &&
+            normalizePath(item.originalPath) === normalizedParent,
+    );
+}
+
+function requireCheckFields(check, fields) {
+    const missing = (fields || []).filter(
+        (field) => check?.[field] === undefined || check?.[field] === null || check?.[field] === "",
+    );
+
+    if (missing.length > 0) {
+        debugLog(
+            `Check misconfigured (${check?.type || "unknown"}): missing ${missing.join(", ")}`,
+            check,
+        );
+        return false;
+    }
+
+    return true;
+}
+
 function calculateScoreFromTasks(tasks) {
     const totalTasks = tasks.length;
     const completedTasks = tasks.filter((t) => t.completed).length;
@@ -768,31 +802,72 @@ function evaluateCheck(check) {
      */
     switch (check.type) {
         case "folder-exists":
+            if (!requireCheckFields(check, ["path"])) return false;
             return folderExists(check.path);
 
         case "folder-not-exists":
+            if (!requireCheckFields(check, ["path"])) return false;
             // True if the folder is NOT present in the current simulated filesystem
             return !folderExists(check.path);
 
         case "file-exists":
+            if (!requireCheckFields(check, ["path"])) return false;
             return fileExists(check.path);
 
         case "file-not-exists":
+            if (!requireCheckFields(check, ["path"])) return false;
             return !fileExists(check.path);
 
         case "file-moved":
+            if (!requireCheckFields(check, ["from", "to"])) return false;
             return fileExists(check.to) && !fileExists(check.from);
 
         case "file-renamed":
+            if (!requireCheckFields(check, ["from", "to"])) return false;
             return fileExists(check.to) && !fileExists(check.from);
 
+        case "file-copied":
+            if (!requireCheckFields(check, ["from", "to"])) return false;
+            return fileExists(check.from) && fileExists(check.to);
+
         case "folder-moved":
+            if (!requireCheckFields(check, ["from", "to"])) return false;
             // Folder exists at destination and not at source
             return folderExists(check.to) && !folderExists(check.from);
 
         case "folder-renamed":
+            if (!requireCheckFields(check, ["from", "to"])) return false;
             // Rename is conceptually move within same parent, but evaluator stays declarative:
             return folderExists(check.to) && !folderExists(check.from);
+
+        case "folder-copied":
+            if (!requireCheckFields(check, ["from", "to"])) return false;
+            return folderExists(check.from) && folderExists(check.to);
+
+        case "file-restored":
+            if (!requireCheckFields(check, ["path"])) return false;
+            return fileExists(check.path) && !recycleBinHasItem("file", check.path);
+
+        case "folder-restored":
+            if (!requireCheckFields(check, ["path"])) return false;
+            return (
+                folderExists(check.path) &&
+                !recycleBinHasItem("folder", check.path)
+            );
+
+        case "file-permanently-deleted":
+            if (!requireCheckFields(check, ["path"])) return false;
+            return (
+                !fileExists(check.path) &&
+                !recycleBinHasItem("file", check.path)
+            );
+
+        case "folder-permanently-deleted":
+            if (!requireCheckFields(check, ["path"])) return false;
+            return (
+                !folderExists(check.path) &&
+                !recycleBinHasItem("folder", check.path)
+            );
 
         default:
             debugLog("Unknown check type:", check.type);
@@ -932,7 +1007,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         currentPath = getDefaultRootPath(fileSystem);
         history = [currentPath];
         historyIndex = 0;
-        recycleBin = [];
+        recycleBin = Array.isArray(cfg?.initialRecycleBin)
+            ? deepClone(cfg.initialRecycleBin)
+            : [];
     } else if (restored) {
         // =====================================================================
         // STUDENT MODE: RESTORE SAME-TAB SESSION

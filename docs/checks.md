@@ -178,3 +178,87 @@ Example:
 "from": "C:\\Docs\\FolderA",
 "to": "C:\\Downloads\\FolderA"
 }
+
+### file-moved
+
+Checks if a file was moved (declarative: destination exists and source does not).
+
+Example:
+{
+"type": "file-moved",
+"from": "C:\\Docs\\report.docx",
+"to": "OneDrive\\Documents\\report.docx"
+}
+
+### file-renamed
+
+Checks if a file was renamed (declarative: new path exists and old path does not).
+
+Example:
+{
+"type": "file-renamed",
+"from": "C:\\Docs\\old.txt",
+"to": "C:\\Docs\\new.txt"
+}
+
+### folder-copied
+
+Checks if a folder was copied (declarative: both source and destination exist).
+
+Example:
+{
+"type": "folder-copied",
+"from": "C:\\Docs\\Templates",
+"to": "OneDrive\\Docs\\Templates"
+}
+
+### file-copied
+
+Checks if a file was copied (declarative: both source and destination exist).
+
+Example:
+{
+"type": "file-copied",
+"from": "C:\\Docs\\report.docx",
+"to": "OneDrive\\Documents\\report.docx"
+}
+
+### file-restored
+
+Checks if a file was restored from the Recycle Bin (declarative: file exists and is not in the Recycle Bin).
+
+Example:
+{
+"type": "file-restored",
+"path": "C:\\Docs\\report.docx"
+}
+
+### folder-restored
+
+Checks if a folder was restored from the Recycle Bin (declarative: folder exists and is not in the Recycle Bin).
+
+Example:
+{
+"type": "folder-restored",
+"path": "C:\\Docs\\Project"
+}
+
+### file-permanently-deleted
+
+Checks if a file was permanently deleted (declarative: file does not exist and is not in the Recycle Bin).
+
+Example:
+{
+"type": "file-permanently-deleted",
+"path": "C:\\Docs\\old.txt"
+}
+
+### folder-permanently-deleted
+
+Checks if a folder was permanently deleted (declarative: folder does not exist and is not in the Recycle Bin).
+
+Example:
+{
+"type": "folder-permanently-deleted",
+"path": "C:\\Temp"
+}
