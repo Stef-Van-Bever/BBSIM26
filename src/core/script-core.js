@@ -760,6 +760,24 @@ function recycleBinHasItem(type, path) {
     );
 }
 
+function recycleBinHasAncestorFolder(path) {
+    if (!path) return false;
+    if (!Array.isArray(recycleBin)) return false;
+
+    const normalizedPath = normalizePath(path);
+    if (!normalizedPath) return false;
+
+    return recycleBin.some((item) => {
+        if (!item || item.type !== "folder") return false;
+        if (!item.name || !item.originalPath) return false;
+
+        const folderPath = normalizePath(
+            joinPathMultiRoot(item.originalPath, item.name),
+        );
+        return normalizedPath.startsWith(`${folderPath}\\`);
+    });
+}
+
 function requireCheckFields(check, fields) {
     const missing = (fields || []).filter(
         (field) => check?.[field] === undefined || check?.[field] === null || check?.[field] === "",
@@ -859,7 +877,8 @@ function evaluateCheck(check) {
             if (!requireCheckFields(check, ["path"])) return false;
             return (
                 !fileExists(check.path) &&
-                !recycleBinHasItem("file", check.path)
+                !recycleBinHasItem("file", check.path) &&
+                !recycleBinHasAncestorFolder(check.path)
             );
 
         case "folder-permanently-deleted":
