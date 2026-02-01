@@ -2264,6 +2264,12 @@ function requestPermanentDelete(itemName) {
 
     const textEl = document.getElementById("deleteConfirmText");
 
+    // Teacher mode has no delete modal in the DOM; perform direct delete.
+    if (!textEl) {
+        performPermanentDeleteFromRecycleBin();
+        return;
+    }
+
     textEl.innerHTML = `
     Are you sure you want to <strong>permanently delete</strong> "${itemName}"?<br><br>
     <strong>This action cannot be undone.</strong>

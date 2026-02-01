@@ -660,6 +660,28 @@ function buildRecycleBinPathSet(recycleBinItems) {
     return set;
 }
 
+function buildRecycleBinFolderPathSet(recycleBinItems) {
+    const set = new Set();
+    if (!Array.isArray(recycleBinItems)) return set;
+
+    recycleBinItems.forEach((item) => {
+        if (item?.type !== "folder") return;
+        if (!item?.originalPath || !item?.name) return;
+        const fullPath = joinPathMultiRoot(item.originalPath, item.name);
+        set.add(normalizePath(fullPath));
+    });
+
+    return set;
+}
+
+function isDescendantPath(path, ancestorPath) {
+    if (!path || !ancestorPath) return false;
+    const normPath = normalizePath(path);
+    const normAncestor = normalizePath(ancestorPath);
+    if (normPath === normAncestor) return false;
+    return normPath.startsWith(`${normAncestor}\\`);
+}
+
 function buildFlatPathSet(flat) {
     const set = new Set();
     (flat || []).forEach((item) => {
@@ -824,10 +846,22 @@ function interpretDiffsFromFlats(
         movedPaths,
     );
     const targetBinSetForRemoved = buildRecycleBinPathSet(targetRecycleBin);
+    const targetBinFolderSet = buildRecycleBinFolderPathSet(targetRecycleBin);
     removed.forEach((item) => {
         const key = buildPathKey(item.type, item.path);
-        if (targetBinSetForRemoved.has(key)) diffs.removed.push(item);
-        else diffs.removedPermanent.push(item);
+        if (targetBinSetForRemoved.has(key)) {
+            diffs.removed.push(item);
+            return;
+        }
+
+        const isChildOfSoftDeletedFolder = Array.from(targetBinFolderSet).some(
+            (folderPath) => isDescendantPath(item.path, folderPath),
+        );
+        if (isChildOfSoftDeletedFolder) {
+            diffs.removed.push(item);
+        } else {
+            diffs.removedPermanent.push(item);
+        }
     });
 
     // Debug logs preserved (can be gated later)
