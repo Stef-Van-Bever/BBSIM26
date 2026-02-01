@@ -135,6 +135,33 @@ Separating diffs, tasks, and checks allows:
 
 ## Supported check types
 
+## Config: initialRecycleBin (optional)
+
+Exercises can pre-seed the Recycle Bin via `initialRecycleBin` in `exercise-config.json`.
+This is useful for restore/permanent-delete tasks.
+
+Each entry uses the same shape as the runtime recycle bin items:
+
+Example:
+{
+"meta": { "title": "Restore exercise" },
+"initialStructure": { ... },
+"initialRecycleBin": [
+  {
+    "name": "old.txt",
+    "type": "file",
+    "originalPath": "C:\\Docs",
+    "deletedAt": "2026-02-01T12:00:00.000Z"
+  }
+],
+"tasks": [ ... ]
+}
+
+Notes:
+- `originalPath` is the folder that contained the item before deletion.
+- `deletedAt` is informational and optional.
+- Items in `initialRecycleBin` are removed from the live structure; only the bin holds them at start.
+
 ### file-exists
 
 Checks if a file exists at the given path.

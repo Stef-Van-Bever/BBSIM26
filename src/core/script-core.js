@@ -1048,7 +1048,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         currentPath = getDefaultRootPath(fileSystem);
         history = [currentPath];
         historyIndex = 0;
-        recycleBin = [];
+        recycleBin = Array.isArray(cfg?.initialRecycleBin)
+            ? deepClone(cfg.initialRecycleBin)
+            : [];
     }
 
     // Instructions
