@@ -916,6 +916,15 @@ let deleteContext = {
     itemName: null,
 };
 let isProgressRunning = false;
+let extractWizardState = {
+    zipName: null,
+    zipParentPath: null,
+    destinationPath: null,
+    showAfterComplete: true,
+};
+let folderPickerState = {
+    selectedPath: null,
+};
 
 // ============================================================================
 // 6) DOM Cache (elements)
@@ -1147,6 +1156,21 @@ function bindModalEvents() {
     safeOn("closeFileViewerBtn", "click", () => hideModal("fileViewerModal"));
     safeOn("cancelNewItemBtn", "click", () => hideModal("newItemModal"));
     safeOn("createNewItemBtn", "click", createNewItem);
+    safeOn("cancelExtractWizardBtn", "click", () =>
+        hideModal("extractWizardModal"),
+    );
+    safeOn("confirmExtractWizardBtn", "click", confirmExtractToDestination);
+    safeOn("extractBrowseBtn", "click", openFolderPicker);
+    safeOn("cancelFolderPickerBtn", "click", () =>
+        hideModal("folderPickerModal"),
+    );
+    safeOn("confirmFolderPickerBtn", "click", confirmFolderPickerSelection);
+    safeOn("folderPickerList", "click", (e) => {
+        const item = e.target.closest(".folder-picker-item");
+        if (!item) return;
+        folderPickerState.selectedPath = item.dataset.path || null;
+        renderFolderPicker();
+    });
 }
 
 function bindGlobalEvents() {
@@ -2491,6 +2515,28 @@ function addZipFileToCurrentFolder(zipName, compressedContents) {
     return zipItem.name; // actual final name after conflict resolution
 }
 
+function extractZipToFolder(zipFile, destinationPath) {
+    if (
+        !zipFile?.compressedContents ||
+        zipFile.compressedContents.length === 0
+    ) {
+        return null;
+    }
+
+    const destinationFolder = getFolder(destinationPath);
+    if (!destinationFolder) return null;
+
+    const baseFolderName = zipFile.name.replace(".zip", "");
+    const extractedFolder = {
+        name: baseFolderName,
+        type: "folder",
+        children: deepClone(zipFile.compressedContents),
+    };
+
+    addWithUniqueName(destinationFolder.children, extractedFolder);
+    return extractedFolder.name;
+}
+
 function extractZipIntoCurrentFolder(zipFile) {
     // INVARIANT: keep existing guard
     if (
@@ -2515,6 +2561,197 @@ function extractZipIntoCurrentFolder(zipFile) {
     addWithUniqueName(folder.children, extractedFolder);
 }
 
+function getDefaultExtractDestinationPath() {
+    const roots = fileSystem?.roots || [];
+    const preferredRoot = getDefaultRootPath(fileSystem);
+
+    if (preferredRoot && preferredRoot !== currentPath) {
+        return preferredRoot;
+    }
+
+    const otherRoot = roots.find((r) => r.name !== currentPath);
+    if (otherRoot) return otherRoot.name;
+
+    const currentFolder = getFolder(currentPath);
+    const firstChildFolder = currentFolder?.children?.find(
+        (child) => child.type === "folder",
+    );
+    if (firstChildFolder) {
+        return joinPathMultiRoot(currentPath, firstChildFolder.name);
+    }
+
+    return null;
+}
+
+function shouldShowExtractWizardWarning(destinationPath) {
+    if (!destinationPath) return false;
+    if (currentPath === "This PC" || currentPath === "Recycle Bin") return false;
+    return destinationPath === currentPath;
+}
+
+function updateExtractWizardUI() {
+    const input = document.getElementById("extractDestinationInput");
+    if (input) {
+        input.value = extractWizardState.destinationPath || "";
+    }
+
+    const checkbox = document.getElementById("extractShowAfterCheckbox");
+    if (checkbox) {
+        checkbox.checked = !!extractWizardState.showAfterComplete;
+    }
+
+    const warning = document.getElementById("extractWizardWarning");
+    if (warning) {
+        warning.classList.toggle(
+            "hidden",
+            !shouldShowExtractWizardWarning(extractWizardState.destinationPath),
+        );
+    }
+}
+
+function buildFolderPickerItems(folder, path, level, selectedPath) {
+    const isSelected = path === selectedPath;
+    let html = `
+        <div class="folder-picker-item ${
+            isSelected ? "selected" : ""
+        }" data-path="${path}" style="--level: ${level}">
+            ${getNameFromPath(path)}
+        </div>
+    `;
+
+    const children = folder.children?.filter((c) => c.type === "folder") || [];
+    children.forEach((child) => {
+        const childPath = joinPathMultiRoot(path, child.name);
+        html += buildFolderPickerItems(
+            child,
+            childPath,
+            level + 1,
+            selectedPath,
+        );
+    });
+
+    return html;
+}
+
+function renderFolderPicker() {
+    const listEl = document.getElementById("folderPickerList");
+    if (!listEl) return;
+
+    const roots = fileSystem?.roots || [];
+    if (roots.length === 0) {
+        listEl.innerHTML = `<div class="folder-picker-empty">No folders available.</div>`;
+        return;
+    }
+
+    let html = "";
+    roots.forEach((root) => {
+        const path = root.name;
+        html += buildFolderPickerItems(
+            root,
+            path,
+            0,
+            folderPickerState.selectedPath,
+        );
+    });
+
+    listEl.innerHTML = html;
+}
+
+function openFolderPicker() {
+    folderPickerState.selectedPath = extractWizardState.destinationPath;
+    renderFolderPicker();
+    showModal("folderPickerModal");
+}
+
+function confirmFolderPickerSelection() {
+    if (!folderPickerState.selectedPath) {
+        alert("Selecteer eerst een doelmap.");
+        return;
+    }
+
+    extractWizardState.destinationPath = folderPickerState.selectedPath;
+    updateExtractWizardUI();
+    hideModal("folderPickerModal");
+}
+
+function openExtractWizard(zipItem) {
+    if (!zipItem) return;
+    if (isProgressRunning) return;
+
+    extractWizardState.zipName = zipItem.name;
+    extractWizardState.zipParentPath = currentPath;
+    extractWizardState.destinationPath = getDefaultExtractDestinationPath();
+    extractWizardState.showAfterComplete = true;
+
+    updateExtractWizardUI();
+    showModal("extractWizardModal");
+}
+
+function openExtractWizardForSelectedZip() {
+    if (isProgressRunning) return;
+
+    const items = getSelectedZipItems();
+    if (items.length === 0) return;
+    openExtractWizard(items[0]);
+}
+
+function confirmExtractToDestination() {
+    if (isProgressRunning) return;
+
+    const destinationPath = extractWizardState.destinationPath;
+    if (!destinationPath) {
+        alert("Kies eerst een doelmap om uit te pakken.");
+        return;
+    }
+
+    const destinationFolder = getFolder(destinationPath);
+    if (!destinationFolder) {
+        alert("De gekozen doelmap bestaat niet (meer).");
+        return;
+    }
+
+    const zipParentFolder = getFolder(extractWizardState.zipParentPath);
+    const zipFile = zipParentFolder?.children?.find(
+        (item) =>
+            item.name === extractWizardState.zipName && item.name.endsWith(".zip"),
+    );
+    if (!zipFile) {
+        alert("Het zipbestand werd niet gevonden.");
+        return;
+    }
+
+    extractWizardState.showAfterComplete = !!document.getElementById(
+        "extractShowAfterCheckbox",
+    )?.checked;
+
+    hideModal("extractWizardModal");
+
+    runWithProgress({
+        title: "Extracting...",
+        durationMs: 2000,
+        action: () => {
+            const extractedFolderName = extractZipToFolder(
+                zipFile,
+                destinationPath,
+            );
+
+            if (!extractedFolderName) return;
+
+            if (extractWizardState.showAfterComplete) {
+                navigate(destinationPath);
+                selectedItems = [extractedFolderName];
+                renderAll();
+                return;
+            }
+
+            if (destinationPath === currentPath) {
+                selectedItems = [extractedFolderName];
+                renderAll();
+            }
+        },
+    });
+}
+
 // Compress/Extract
 function handleCompress() {
     if (isProgressRunning) return;
@@ -2537,22 +2774,7 @@ function handleCompress() {
 }
 
 function handleExtract() {
-    if (isProgressRunning) return;
-
-    const items = getSelectedZipItems();
-    if (items.length === 0) return;
-
-    runWithProgress({
-        title: "Extracting...",
-        durationMs: 2000,
-        action: () => {
-            items.forEach((zipFile) => {
-                extractZipIntoCurrentFolder(zipFile);
-            });
-
-            renderAll();
-        },
-    });
+    openExtractWizardForSelectedZip();
 }
 
 // New Item
@@ -2633,7 +2855,7 @@ function buildContextMenuForItem(item) {
         <div class="context-divider"></div>
         ${
             isZip
-                ? `<div class="context-item" onclick="handleExtract(); hideContextMenu();">
+                ? `<div class="context-item" onclick="openExtractWizardForSelectedZip(); hideContextMenu();">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><path d="M12 11v6M9 14h6"/></svg>
                 Extract All...
                </div>`

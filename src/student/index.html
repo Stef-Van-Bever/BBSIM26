@@ -562,6 +562,78 @@
             </div>
         </div>
 
+        <!-- Extract Wizard Modal -->
+        <div id="extractWizardModal" class="modal" data-overlay-close="false">
+            <div class="modal-header">
+                <h2>Extract All...</h2>
+            </div>
+            <div class="modal-body">
+                <p class="extract-wizard-text">
+                    Selecteer een doelmap om uit te pakken
+                </p>
+                <div class="extract-destination-row">
+                    <label for="extractDestinationInput">Destination</label>
+                    <div class="extract-destination-field">
+                        <input
+                            id="extractDestinationInput"
+                            class="form-input"
+                            type="text"
+                            readonly
+                            placeholder="Choose a folder..."
+                        />
+                        <button
+                            id="extractBrowseBtn"
+                            class="btn-secondary"
+                            type="button"
+                        >
+                            Browse...
+                        </button>
+                    </div>
+                </div>
+                <div
+                    id="extractWizardWarning"
+                    class="extract-warning hidden"
+                >
+                    Tip: uitpakken in dezelfde map is niet ideaal en kan voor
+                    verwarring zorgen.
+                </div>
+                <label class="extract-checkbox">
+                    <input
+                        id="extractShowAfterCheckbox"
+                        type="checkbox"
+                        checked
+                    />
+                    Show extracted files when complete
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelExtractWizardBtn" class="btn-secondary">
+                    Cancel
+                </button>
+                <button id="confirmExtractWizardBtn" class="btn-primary">
+                    Extract
+                </button>
+            </div>
+        </div>
+
+        <!-- Folder Picker Modal -->
+        <div id="folderPickerModal" class="modal" data-overlay-close="false">
+            <div class="modal-header">
+                <h2>Select destination folder</h2>
+            </div>
+            <div class="modal-body">
+                <div id="folderPickerList" class="folder-picker-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelFolderPickerBtn" class="btn-secondary">
+                    Cancel
+                </button>
+                <button id="confirmFolderPickerBtn" class="btn-primary">
+                    Select folder
+                </button>
+            </div>
+        </div>
+
         <!-- ZIP Progress Modal -->
         <div id="zipProgressModal" class="modal" data-overlay-close="false">
             <div class="modal-header">
