@@ -145,6 +145,8 @@ function resetTeacherWorkflowState() {
     teacherState.targetStructureSet = false;
     teacherState.initialStructure = null;
     teacherState.targetStructure = null;
+    teacherState.initialRecycleBin = null;
+    teacherState.targetRecycleBin = null;
     teacherState.generatedTasks = [];
     teacherState.analysisCompleted = false;
 
@@ -195,10 +197,12 @@ function bindTeacherUiEvents() {
     if (initialBtn) {
         initialBtn.addEventListener("click", () => {
             teacherState.initialStructure = deepClone(fileSystem);
+            teacherState.initialRecycleBin = deepClone(recycleBin);
             teacherState.startStructureSet = true;
             // If start is re-saved, previously saved target/analyze may no longer be valid.
             teacherState.targetStructureSet = false;
             teacherState.targetStructure = null;
+            teacherState.targetRecycleBin = null;
             teacherState.analysisCompleted = false;
             teacherState.generatedTasks = [];
 
@@ -256,6 +260,7 @@ function bindTeacherUiEvents() {
             teacherState.generatedTasks = [];
 
             teacherState.targetStructure = deepClone(fileSystem);
+            teacherState.targetRecycleBin = deepClone(recycleBin);
             teacherState.targetStructureSet = true;
 
             // Remember base label once (for reset)
@@ -292,6 +297,8 @@ function bindTeacherUiEvents() {
             const raw = diffStructures(
                 teacherState.initialStructure,
                 teacherState.targetStructure,
+                teacherState.initialRecycleBin,
+                teacherState.targetRecycleBin,
             );
 
             window.debugLog("RAW DIFF", raw);
@@ -346,6 +353,8 @@ let teacherState = {
 
     initialStructure: null,
     targetStructure: null,
+    initialRecycleBin: null,
+    targetRecycleBin: null,
     generatedTasks: [],
     meta: {
         title: "",
@@ -370,10 +379,16 @@ window.exerciseConfig = {
  *
  * Interpretation is handled in normalizeDiffs().
  */
-function diffStructures(initial, target) {
+function diffStructures(initial, target, initialRecycleBin, targetRecycleBin) {
     return {
         initialFlat: flattenStructure(initial),
         targetFlat: flattenStructure(target),
+        initialRecycleBin: Array.isArray(initialRecycleBin)
+            ? deepClone(initialRecycleBin)
+            : [],
+        targetRecycleBin: Array.isArray(targetRecycleBin)
+            ? deepClone(targetRecycleBin)
+            : [],
     };
 }
 
@@ -389,10 +404,16 @@ function diffStructures(initial, target) {
  * - Returns a normalized list of "diff records" used by task generation.
  */
 function normalizeDiffs(raw) {
-    const { initialFlat, targetFlat } = raw;
+    const { initialFlat, targetFlat, initialRecycleBin, targetRecycleBin } =
+        raw;
 
     // Phase 1: interpret facts into categorized diffs
-    const interpreted = interpretDiffsFromFlats(initialFlat, targetFlat);
+    const interpreted = interpretDiffsFromFlats(
+        initialFlat,
+        targetFlat,
+        initialRecycleBin,
+        targetRecycleBin,
+    );
 
     // Phase 2: normalize interpreted diffs into a flat list of diff-records
     const normalized = normalizeInterpretedDiffs(interpreted);
@@ -493,6 +514,8 @@ function detectAddedItems(
         if (renamedTo.has(item.path) || renamedTo.has(fullPath)) return;
         // Exclude paths that are targets of moved/renamed items to prevent double tasks
         if (excludedTargetPaths?.has(item.path)) return;
+        const normalizedPath = normalizePath(item.path);
+        if (excludedTargetPaths?.has(normalizedPath)) return;
         if (!initialIndex[key]) {
             added.push(item);
         }
@@ -614,6 +637,97 @@ function detectMovedFoldersStub(initialFlat, targetFlat) {
     return moved;
 }
 
+function buildPathKey(type, path) {
+    return `${type}|${normalizePath(path)}`;
+}
+
+function splitPathKey(key) {
+    const idx = key.indexOf("|");
+    if (idx === -1) return { type: "", path: "" };
+    return { type: key.slice(0, idx), path: key.slice(idx + 1) };
+}
+
+function buildRecycleBinPathSet(recycleBinItems) {
+    const set = new Set();
+    if (!Array.isArray(recycleBinItems)) return set;
+
+    recycleBinItems.forEach((item) => {
+        if (!item?.originalPath || !item?.name || !item?.type) return;
+        const fullPath = joinPathMultiRoot(item.originalPath, item.name);
+        set.add(buildPathKey(item.type, fullPath));
+    });
+
+    return set;
+}
+
+function buildRecycleBinFolderPathSet(recycleBinItems) {
+    const set = new Set();
+    if (!Array.isArray(recycleBinItems)) return set;
+
+    recycleBinItems.forEach((item) => {
+        if (item?.type !== "folder") return;
+        if (!item?.originalPath || !item?.name) return;
+        const fullPath = joinPathMultiRoot(item.originalPath, item.name);
+        set.add(normalizePath(fullPath));
+    });
+
+    return set;
+}
+
+function isDescendantPath(path, ancestorPath) {
+    if (!path || !ancestorPath) return false;
+    const normPath = normalizePath(path);
+    const normAncestor = normalizePath(ancestorPath);
+    if (normPath === normAncestor) return false;
+    return normPath.startsWith(`${normAncestor}\\`);
+}
+
+function buildFlatPathSet(flat) {
+    const set = new Set();
+    (flat || []).forEach((item) => {
+        if (!item?.type || !item?.path) return;
+        set.add(buildPathKey(item.type, item.path));
+    });
+    return set;
+}
+
+function detectCopiedItems(initialFlat, targetFlat) {
+    const copied = [];
+    const targetPaths = buildFlatPathSet(targetFlat);
+    const initialPaths = buildFlatPathSet(initialFlat);
+
+    const initialByTypeName = new Map();
+    initialFlat.forEach((item) => {
+        const key = `${item.type}:${item.name}`;
+        if (!initialByTypeName.has(key)) initialByTypeName.set(key, []);
+        initialByTypeName.get(key).push(item);
+    });
+
+    targetFlat.forEach((targetItem) => {
+        const key = `${targetItem.type}:${targetItem.name}`;
+        const sources = initialByTypeName.get(key) || [];
+
+        const source = sources.find((src) =>
+            targetPaths.has(buildPathKey(src.type, src.path)),
+        );
+
+        if (!source) return;
+        if (normalizePath(source.path) === normalizePath(targetItem.path)) return;
+        // Only treat as copy if the target path is new in the target structure.
+        if (initialPaths.has(buildPathKey(targetItem.type, targetItem.path)))
+            return;
+
+        copied.push({
+            type: targetItem.type,
+            name: targetItem.name,
+            from: source.path,
+            to: targetItem.path,
+        });
+    });
+
+    return copied;
+}
+
 /**
  * Convert two flat listings into interpreted diffs.
  * This is where we enforce invariant priorities.
@@ -621,13 +735,22 @@ function detectMovedFoldersStub(initialFlat, targetFlat) {
  * NOTE: We intentionally preserve current behavior (incl. existing quirks)
  * to keep this refactor non-breaking.
  */
-function interpretDiffsFromFlats(initialFlat, targetFlat) {
+function interpretDiffsFromFlats(
+    initialFlat,
+    targetFlat,
+    initialRecycleBin,
+    targetRecycleBin,
+) {
     const diffs = {
         added: [],
         removed: [],
+        removedPermanent: [],
         moved: [],
         movedFolders: [], // (als je moved-folders al toevoegde)
         renamed: [],
+        copied: [],
+        restored: [],
+        binPermanentlyDeleted: [],
     };
 
     // ---- Rename detection (priority #1) ----
@@ -661,12 +784,51 @@ function interpretDiffsFromFlats(initialFlat, targetFlat) {
 
     // Build excludedTargetPaths: exclude moved-to (and rename-to) from "added" detection
     const excludedTargetPaths = new Set();
-    diffs.moved.forEach((m) => excludedTargetPaths.add(m.to));
-    diffs.movedFolders.forEach((m) => excludedTargetPaths.add(m.to));
+    const addExcludedPath = (path) => {
+        if (!path) return;
+        excludedTargetPaths.add(path);
+        excludedTargetPaths.add(normalizePath(path));
+    };
+    diffs.moved.forEach((m) => addExcludedPath(m.to));
+    diffs.movedFolders.forEach((m) => addExcludedPath(m.to));
 
     // NOTE: renamedTo is already handled via renamedTo.has checks in detectAddedItems
     // but keeping this here makes it future-ready if we refactor detectAddedItems later.
-    renamedTo.forEach((p) => excludedTargetPaths.add(p));
+    renamedTo.forEach((p) => addExcludedPath(p));
+
+    // ---- Copied detection (after moved/rename, before added) ----
+    diffs.copied = detectCopiedItems(initialFlat, targetFlat);
+    diffs.copied.forEach((c) => addExcludedPath(c.to));
+
+    // ---- Recycle bin interpretation (restore/permanent delete) ----
+    const initialBinSet = buildRecycleBinPathSet(initialRecycleBin);
+    const targetBinSet = buildRecycleBinPathSet(targetRecycleBin);
+    const targetPathSet = buildFlatPathSet(targetFlat);
+
+    // Restore: item was in initial bin, now exists in target and not in bin
+    initialBinSet.forEach((key) => {
+        if (targetPathSet.has(key) && !targetBinSet.has(key)) {
+            const { type, path: rawPath } = splitPathKey(key);
+            diffs.restored.push({
+                type,
+                path: rawPath,
+                name: getNameFromPath(rawPath),
+            });
+            addExcludedPath(rawPath);
+        }
+    });
+
+    // Permanently deleted from bin: item was in initial bin, now gone from bin and FS
+    initialBinSet.forEach((key) => {
+        if (!targetPathSet.has(key) && !targetBinSet.has(key)) {
+            const { type, path: rawPath } = splitPathKey(key);
+            diffs.binPermanentlyDeleted.push({
+                type,
+                path: rawPath,
+                name: getNameFromPath(rawPath),
+            });
+        }
+    });
 
     // ---- Added detection (after moved/rename so we can exclude moved-to) ----
     diffs.added = detectAddedItems(
@@ -677,12 +839,30 @@ function interpretDiffsFromFlats(initialFlat, targetFlat) {
     );
 
     // ---- Removed detection (rename + moved have priority) ----
-    diffs.removed = detectRemovedItems(
+    const removed = detectRemovedItems(
         initialFlat,
         targetFlat,
         renamedPaths,
         movedPaths,
     );
+    const targetBinSetForRemoved = buildRecycleBinPathSet(targetRecycleBin);
+    const targetBinFolderSet = buildRecycleBinFolderPathSet(targetRecycleBin);
+    removed.forEach((item) => {
+        const key = buildPathKey(item.type, item.path);
+        if (targetBinSetForRemoved.has(key)) {
+            diffs.removed.push(item);
+            return;
+        }
+
+        const isChildOfSoftDeletedFolder = Array.from(targetBinFolderSet).some(
+            (folderPath) => isDescendantPath(item.path, folderPath),
+        );
+        if (isChildOfSoftDeletedFolder) {
+            diffs.removed.push(item);
+        } else {
+            diffs.removedPermanent.push(item);
+        }
+    });
 
     // Debug logs preserved (can be gated later)
     window.debugLog("INITIAL FLAT", initialFlat);
@@ -709,6 +889,17 @@ function normalizeInterpretedDiffs(diffs) {
     diffs.removed.forEach((item) => {
         result.push({
             kind: item.type === "folder" ? "removed-folder" : "removed-file",
+            path: item.path,
+            name: item.name,
+        });
+    });
+
+    diffs.removedPermanent.forEach((item) => {
+        result.push({
+            kind:
+                item.type === "folder"
+                    ? "permanently-deleted-folder"
+                    : "permanently-deleted-file",
             path: item.path,
             name: item.name,
         });
@@ -741,6 +932,34 @@ function normalizeInterpretedDiffs(diffs) {
             kind: "renamed-file",
             from: item.from,
             to: item.to,
+        });
+    });
+
+    diffs.copied.forEach((item) => {
+        result.push({
+            kind: item.type === "folder" ? "copied-folder" : "copied-file",
+            from: item.from,
+            to: item.to,
+            name: item.name,
+        });
+    });
+
+    diffs.restored.forEach((item) => {
+        result.push({
+            kind: item.type === "folder" ? "restored-folder" : "restored-file",
+            path: item.path,
+            name: item.name,
+        });
+    });
+
+    diffs.binPermanentlyDeleted.forEach((item) => {
+        result.push({
+            kind:
+                item.type === "folder"
+                    ? "permanently-deleted-folder"
+                    : "permanently-deleted-file",
+            path: item.path,
+            name: item.name,
         });
     });
 
@@ -832,12 +1051,92 @@ function createTaskFromDiff(diff) {
             return task;
         }
 
+        case "permanently-deleted-file": {
+            const task = {
+                type: "file-permanently-deleted",
+                description: "",
+                checks: [
+                    { type: "file-permanently-deleted", path: diff.path },
+                ],
+            };
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+
+        case "permanently-deleted-folder": {
+            const task = {
+                type: "folder-permanently-deleted",
+                description: "",
+                checks: [
+                    { type: "folder-permanently-deleted", path: diff.path },
+                ],
+            };
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+
         case "added-file": {
             // Teacher-generated task: student must create a file at this exact path
             const task = {
                 type: "file-created",
                 description: "",
                 checks: [{ type: "file-exists", path: diff.path }],
+            };
+
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+
+        case "copied-file": {
+            const task = {
+                type: "file-copied",
+                description: "",
+                checks: [
+                    {
+                        type: "file-copied",
+                        from: diff.from,
+                        to: diff.to,
+                    },
+                ],
+            };
+
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+
+        case "copied-folder": {
+            const task = {
+                type: "folder-copied",
+                description: "",
+                checks: [
+                    {
+                        type: "folder-copied",
+                        from: diff.from,
+                        to: diff.to,
+                    },
+                ],
+            };
+
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+
+        case "restored-file": {
+            const task = {
+                type: "file-restored",
+                description: "",
+                checks: [{ type: "file-restored", path: diff.path }],
+            };
+
+            task.description = generateDefaultTaskDescription(task);
+            return task;
+        }
+
+        case "restored-folder": {
+            const task = {
+                type: "folder-restored",
+                description: "",
+                checks: [{ type: "folder-restored", path: diff.path }],
             };
 
             task.description = generateDefaultTaskDescription(task);
@@ -908,6 +1207,58 @@ function generateDefaultTaskDescription(task) {
             const path = task.checks[0].path;
             const fileName = getNameFromPath(path);
             return `Maak een nieuw bestand "${fileName}" op de juiste plaats.`;
+        }
+
+        case "file-copied": {
+            const copyCheck = task.checks.find((c) => c.type === "file-copied");
+            const to = copyCheck?.to;
+
+            if (!to) return "Kopieer het bestand naar de juiste plaats.";
+
+            const fileName = getNameFromPath(to);
+            const parent = getParentPathMultiRoot(to);
+            const parentName = parent ? getNameFromPath(parent) : "This PC";
+
+            return `Kopieer het bestand "${fileName}" naar "${parentName}".`;
+        }
+
+        case "folder-copied": {
+            const copyCheck = task.checks.find(
+                (c) => c.type === "folder-copied",
+            );
+            const to = copyCheck?.to;
+
+            if (!to) return "Kopieer de map naar de juiste plaats.";
+
+            const folderName = getNameFromPath(to);
+            const parent = getParentPathMultiRoot(to);
+            const parentName = parent ? getNameFromPath(parent) : "This PC";
+
+            return `Kopieer de map "${folderName}" naar "${parentName}".`;
+        }
+
+        case "file-restored": {
+            const path = task.checks[0].path;
+            const fileName = getNameFromPath(path);
+            return `Herstel het bestand "${fileName}" uit de prullenbak.`;
+        }
+
+        case "folder-restored": {
+            const path = task.checks[0].path;
+            const folderName = getNameFromPath(path);
+            return `Herstel de map "${folderName}" uit de prullenbak.`;
+        }
+
+        case "file-permanently-deleted": {
+            const path = task.checks[0].path;
+            const fileName = getNameFromPath(path);
+            return `Verwijder het bestand "${fileName}" permanent.`;
+        }
+
+        case "folder-permanently-deleted": {
+            const path = task.checks[0].path;
+            const folderName = getNameFromPath(path);
+            return `Verwijder de map "${folderName}" permanent.`;
         }
 
         default:
@@ -1023,6 +1374,7 @@ function exportExerciseConfig() {
             description: teacherState.meta.description || "",
         },
         initialStructure: teacherState.initialStructure,
+        initialRecycleBin: teacherState.initialRecycleBin || [],
         tasks: tasks.map((task) => ({
             description: task.description,
             checks: task.checks,

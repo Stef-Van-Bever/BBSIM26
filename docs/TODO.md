@@ -1,33 +1,5 @@
 # TECHNISCHE TODO — Next Phase (post-refactor)
 
-## TODO 06 — Checks uitbreiden: folder-not-exists + folder moved/renamed (state-based)
-
-**Doel**
-Meer oefeningstypes kunnen evalueren zonder grote architectuurwijziging.
-
-**Beschrijving**
-
-- Implementeer `folder-not-exists` (staat al beschreven, maar ontbreekt in evaluatie).
-- Voeg checks toe:
-    - `folder-renamed` (from/to)
-    - `folder-moved` (from/to)
-
-- Zorg dat teacher editor ze kan opslaan in JSON en student evaluator ze begrijpt.
-
-**Succescriteria**
-
-- Nieuwe check types werken end-to-end: config → uitvoeren → “Check” → correct resultaat.
-- Geen regressie op bestaande checks.
-- Foutmeldingen bij misconfiguratie zijn begrijpelijk.
-
-**Nodige files**
-
-- `/src/core/script-core.js` (evaluateCheck uitbreiding)
-- `/docs/checks.md` (documentatie updaten)
-- `/src/teacher/script-teacher.js` (UI/serializer indien nodig)
-
----
-
 ## TODO 07 — Checks uitbreiden: zip/extract checks via state (`isZip`, `compressedContents`)
 
 **Doel**
@@ -41,6 +13,9 @@ Oefeningen rond comprimeren/uitpakken kunnen automatisch beoordeeld worden.
     - `zip-not-exists` (optioneel)
 
 - Let op “fake zip”: student kan niet zomaar een file “.zip” aanmaken en slagen; check moet `isZip` gebruiken.
+- nieuwe tasks:
+    - `folder-zipped`
+    - `folder-extracted`
 
 **Succescriteria**
 
@@ -164,6 +139,27 @@ Meertalige ondersteuning zonder overal hardcoded tekst.
 ---
 
 # NICE TO HAVE (later / apart plannen)
+
+## NOTE â€” Student recycle bin pre-seeding
+
+**Doel**
+Oefeningen met restore/permanent-delete checks moeten kunnen starten met items in de prullenbak.
+
+**Beschrijving**
+
+- Student fresh-start moet `recycleBin` initialiseren vanuit `exercise-config.json`:
+  - `initialRecycleBin` (exported by teacher configurator)
+- Hiermee kunnen restore/permanent-delete taken slagen zonder eerst een item te verwijderen.
+
+**Succescriteria**
+
+- Nieuwe oefening met `initialRecycleBin` toont items in de Recycle Bin.
+- `file-restored` / `folder-restored` en `file/folder-permanently-deleted` checks kunnen slagen.
+
+**Nodige files**
+
+- `/src/core/script-core.js`
+- `/docs/checks.md` (optioneel: config schema note)
 
 ## NTH 01 — Drag & drop (files/folders verplaatsen)
 

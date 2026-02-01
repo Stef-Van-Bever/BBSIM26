@@ -101,3 +101,31 @@ Realistische context: werken met lokale schijf én cloudmap.
 !!! _opvolging_: taskgeneratie en checks moeten aangepast worden. Doe dit zo snel mogelijk.
 
 ---
+
+## TODO 06 — Checks uitbreiden: folder-not-exists + folder moved/renamed (state-based)
+
+**Doel**
+Meer oefeningstypes kunnen evalueren zonder grote architectuurwijziging.
+
+**Beschrijving**
+
+- Implementeer `folder-not-exists` (staat al beschreven, maar ontbreekt in evaluatie).
+- Voeg checks toe:
+    - `folder-renamed` (from/to)
+    - `folder-moved` (from/to)
+
+- Zorg dat teacher editor ze kan opslaan in JSON en student evaluator ze begrijpt.
+
+**Succescriteria**
+
+- Nieuwe check types werken end-to-end: config → uitvoeren → “Check” → correct resultaat.
+- Geen regressie op bestaande checks.
+- Foutmeldingen bij misconfiguratie zijn begrijpelijk.
+
+**Nodige files**
+
+- `/src/core/script-core.js` (evaluateCheck uitbreiding)
+- `/docs/checks.md` (documentatie updaten)
+- `/src/teacher/script-teacher.js` (UI/serializer indien nodig)
+
+---
