@@ -503,6 +503,59 @@
             </div>
             <div id="tasksEditor" class="tasks-editor hidden">
                 <h3>Generated tasks</h3>
+                <div class="task-add-panel">
+                    <div class="task-add-row">
+                        <select
+                            id="manualTaskType"
+                            class="form-input task-add-select"
+                        >
+                            <option value="zip-compress">
+                                ZIP: compress selected items
+                            </option>
+                            <option value="zip-extract">
+                                UNZIP: extract archive to destination
+                            </option>
+                        </select>
+                        <button id="addManualTaskBtn" class="btn-secondary">
+                            Add task
+                        </button>
+                    </div>
+                    <div class="task-params">
+                        <div class="task-param-group">
+                            <label for="manualZipPathInput">Zip path</label>
+                            <input
+                                id="manualZipPathInput"
+                                class="form-input"
+                                type="text"
+                                placeholder="C:\\Downloads\\Archive.zip"
+                            />
+                        </div>
+                        <div class="task-param-group">
+                            <label for="manualZipEntriesInput"
+                                >Entries (one per line)</label
+                            >
+                            <textarea
+                                id="manualZipEntriesInput"
+                                class="form-textarea task-entries-input"
+                                placeholder="Docs&#10;img.png"
+                            ></textarea>
+                        </div>
+                        <div
+                            id="manualDestinationGroup"
+                            class="task-param-group"
+                        >
+                            <label for="manualDestinationInput"
+                                >Destination folder</label
+                            >
+                            <input
+                                id="manualDestinationInput"
+                                class="form-input"
+                                type="text"
+                                placeholder="C:\\Docs\\Archive"
+                            />
+                        </div>
+                    </div>
+                </div>
                 <div id="tasksList"></div>
                 <button id="exportExerciseBtn" class="btn-primary">
                     Export exercise

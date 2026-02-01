@@ -72,6 +72,9 @@ function updateWorkflowStepper() {
     const hasStart = Boolean(teacherState.startStructureSet);
     const hasTarget = Boolean(teacherState.targetStructureSet);
     const analyzed = Boolean(teacherState.analysisCompleted);
+    const hasTasks = Array.isArray(teacherState.generatedTasks)
+        ? teacherState.generatedTasks.length > 0
+        : false;
 
     // Status text
     if (sStart) sStart.textContent = hasStart ? "Saved ✓" : "Not set";
@@ -113,6 +116,9 @@ function updateWorkflowUi() {
     const hasStart = Boolean(teacherState.startStructureSet);
     const hasTarget = Boolean(teacherState.targetStructureSet);
     const analyzed = Boolean(teacherState.analysisCompleted);
+    const hasTasks = Array.isArray(teacherState.generatedTasks)
+        ? teacherState.generatedTasks.length > 0
+        : false;
 
     if (targetBtn) {
         targetBtn.disabled = !hasStart;
@@ -131,8 +137,9 @@ function updateWorkflowUi() {
 
     // Step 4: Export only after Analyze (prevents exporting half-finished configs)
     if (exportBtn) {
-        exportBtn.disabled = !analyzed;
-        exportBtn.title = analyzed
+        const canExport = analyzed || hasTasks;
+        exportBtn.disabled = !canExport;
+        exportBtn.title = canExport
             ? "Export exercise"
             : "Run Analyze differences first";
     }
@@ -150,9 +157,10 @@ function resetTeacherWorkflowState() {
     teacherState.generatedTasks = [];
     teacherState.analysisCompleted = false;
 
-    // Hide tasks editor panel again
+    // Keep tasks editor visible for manual task creation
     const editor = document.getElementById("tasksEditor");
-    if (editor) editor.classList.add("hidden");
+    if (editor) editor.classList.remove("hidden");
+    renderTasksEditor([]);
 
     // Restore button labels
     const startBtn =
@@ -303,7 +311,16 @@ function bindTeacherUiEvents() {
 
             window.debugLog("RAW DIFF", raw);
 
-            teacherState.generatedTasks = generateTasksFromDiffs(raw);
+            const manualTasks = Array.isArray(teacherState.generatedTasks)
+                ? teacherState.generatedTasks.filter(
+                      (task) =>
+                          task.type === "zip-compress" ||
+                          task.type === "zip-extract",
+                  )
+                : [];
+
+            const diffTasks = generateTasksFromDiffs(raw);
+            teacherState.generatedTasks = diffTasks.concat(manualTasks);
 
             window.debugLog("GENERATED TASKS", teacherState.generatedTasks);
 
@@ -320,6 +337,32 @@ function bindTeacherUiEvents() {
         document.getElementById("exportExerciseConfigBtn");
     if (exportBtn) {
         exportBtn.addEventListener("click", exportExerciseConfig);
+    }
+
+    const manualTypeSelect = document.getElementById("manualTaskType");
+    const addManualTaskBtn = document.getElementById("addManualTaskBtn");
+
+    if (manualTypeSelect) {
+        manualTypeSelect.addEventListener("change", () => {
+            syncManualTaskControls();
+        });
+    }
+
+    if (addManualTaskBtn) {
+        addManualTaskBtn.addEventListener("click", () => {
+            const task = buildManualZipTaskFromInputs();
+            if (!task) return;
+
+            teacherState.generatedTasks = Array.isArray(
+                teacherState.generatedTasks,
+            )
+                ? teacherState.generatedTasks
+                : [];
+            teacherState.generatedTasks.push(task);
+            renderTasksEditor(teacherState.generatedTasks);
+            updateWorkflowUi();
+            showTeacherToast("Task added");
+        });
     }
 
     // When teacher resets the filesystem, the saved snapshots are no longer valid.
@@ -341,6 +384,143 @@ function bindTeacherUiEvents() {
         ?.addEventListener("input", (e) => {
             teacherState.meta.description = e.target.value;
         });
+}
+
+function syncManualTaskControls() {
+    const typeSelect = document.getElementById("manualTaskType");
+    const destinationGroup = document.getElementById("manualDestinationGroup");
+    if (!typeSelect || !destinationGroup) return;
+
+    const isExtract = typeSelect.value === "zip-extract";
+    destinationGroup.classList.toggle("hidden", !isExtract);
+}
+
+function parseEntriesInput(value) {
+    return (value || "")
+        .split(/\r?\n/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+}
+
+function buildManualZipTaskFromInputs() {
+    const typeSelect = document.getElementById("manualTaskType");
+    const zipPathInput = document.getElementById("manualZipPathInput");
+    const entriesInput = document.getElementById("manualZipEntriesInput");
+    const destinationInput = document.getElementById("manualDestinationInput");
+
+    if (!typeSelect || !zipPathInput || !entriesInput) return null;
+
+    const taskType = typeSelect.value;
+    const zipPath = zipPathInput.value.trim();
+    const entries = parseEntriesInput(entriesInput.value);
+    const destinationFolder = destinationInput?.value.trim() || "";
+
+    if (!zipPath) {
+        alert("Geef een zip pad op.");
+        return null;
+    }
+
+    if (entries.length === 0) {
+        alert("Voeg minstens één entry toe.");
+        return null;
+    }
+
+    if (taskType === "zip-extract" && !destinationFolder) {
+        alert("Geef een doelmap op.");
+        return null;
+    }
+
+    if (taskType === "zip-extract") {
+        const task = {
+            type: "zip-extract",
+            description: "",
+            zipPath,
+            entries,
+            destinationFolder,
+            checks: [
+                {
+                    type: "zip-extracted-to",
+                    zipPath,
+                    destinationFolder,
+                    expectEntries: entries,
+                },
+            ],
+        };
+        task.description = generateDefaultTaskDescription(task);
+        return task;
+    }
+
+    const task = {
+        type: "zip-compress",
+        description: "",
+        zipPath,
+        entries,
+        checks: [
+            { type: "zip-exists", path: zipPath },
+            {
+                type: "zip-contains",
+                zipPath,
+                entries,
+                mode: "all",
+            },
+        ],
+    };
+    task.description = generateDefaultTaskDescription(task);
+    return task;
+}
+
+function hydrateZipTaskDefaults(task) {
+    if (!task) return;
+
+    if (!task.zipPath) {
+        task.zipPath =
+            task.checks?.find((c) => c.type === "zip-exists")?.path ||
+            task.checks?.find((c) => c.type === "zip-contains")?.zipPath ||
+            task.checks?.find((c) => c.type === "zip-extracted-to")?.zipPath ||
+            "";
+    }
+
+    if (!Array.isArray(task.entries)) {
+        task.entries =
+            task.checks?.find((c) => c.type === "zip-contains")?.entries ||
+            task.checks?.find((c) => c.type === "zip-extracted-to")
+                ?.expectEntries ||
+            [];
+    }
+
+    if (!task.destinationFolder) {
+        task.destinationFolder =
+            task.checks?.find((c) => c.type === "zip-extracted-to")
+                ?.destinationFolder || "";
+    }
+}
+
+function syncZipTaskChecks(task) {
+    if (!task) return;
+
+    if (task.type === "zip-extract") {
+        task.checks = [
+            {
+                type: "zip-extracted-to",
+                zipPath: task.zipPath || "",
+                destinationFolder: task.destinationFolder || "",
+                expectEntries: Array.isArray(task.entries) ? task.entries : [],
+            },
+        ];
+        return;
+    }
+
+    if (task.type === "zip-compress") {
+        task.checks = [
+            { type: "zip-exists", path: task.zipPath || "" },
+            {
+                type: "zip-contains",
+                zipPath: task.zipPath || "",
+                entries: Array.isArray(task.entries) ? task.entries : [],
+                mode: "all",
+            },
+        ];
+    }
 }
 
 let teacherState = {
@@ -1261,6 +1441,26 @@ function generateDefaultTaskDescription(task) {
             return `Verwijder de map "${folderName}" permanent.`;
         }
 
+        case "zip-compress": {
+            const zipPath = task.checks.find((c) => c.type === "zip-exists")
+                ?.path;
+            const zipName = zipPath ? getNameFromPath(zipPath) : "archief";
+            return `Maak een ZIP-archief "${zipName}".`;
+        }
+
+        case "zip-extract": {
+            const extractCheck = task.checks.find(
+                (c) => c.type === "zip-extracted-to",
+            );
+            const zipName = extractCheck?.zipPath
+                ? getNameFromPath(extractCheck.zipPath)
+                : "archief";
+            const destName = extractCheck?.destinationFolder
+                ? getNameFromPath(extractCheck.destinationFolder)
+                : "doelmap";
+            return `Pak "${zipName}" uit naar "${destName}".`;
+        }
+
         default:
             return "Voer deze opdracht uit.";
     }
@@ -1331,13 +1531,69 @@ function renderTasksEditor(tasks = teacherState.generatedTasks) {
         item.appendChild(header);
         item.appendChild(input);
 
+        if (task.type === "zip-compress" || task.type === "zip-extract") {
+            hydrateZipTaskDefaults(task);
+
+            const zipPathGroup = document.createElement("div");
+            zipPathGroup.className = "task-param-group";
+            const zipPathLabel = document.createElement("label");
+            zipPathLabel.textContent = "Zip path";
+            const zipPathInput = document.createElement("input");
+            zipPathInput.type = "text";
+            zipPathInput.className = "form-input";
+            zipPathInput.value = task.zipPath || "";
+            zipPathInput.addEventListener("input", () => {
+                task.zipPath = zipPathInput.value;
+                syncZipTaskChecks(task);
+            });
+            zipPathGroup.appendChild(zipPathLabel);
+            zipPathGroup.appendChild(zipPathInput);
+            item.appendChild(zipPathGroup);
+
+            const entriesGroup = document.createElement("div");
+            entriesGroup.className = "task-param-group";
+            const entriesLabel = document.createElement("label");
+            entriesLabel.textContent = "Entries (one per line)";
+            const entriesInput = document.createElement("textarea");
+            entriesInput.className = "form-textarea task-entries-input";
+            entriesInput.value = (task.entries || []).join("\n");
+            entriesInput.addEventListener("input", () => {
+                task.entries = parseEntriesInput(entriesInput.value);
+                syncZipTaskChecks(task);
+            });
+            entriesGroup.appendChild(entriesLabel);
+            entriesGroup.appendChild(entriesInput);
+            item.appendChild(entriesGroup);
+
+            if (task.type === "zip-extract") {
+                const destinationGroup = document.createElement("div");
+                destinationGroup.className = "task-param-group";
+                const destinationLabel = document.createElement("label");
+                destinationLabel.textContent = "Destination folder";
+                const destinationInput = document.createElement("input");
+                destinationInput.type = "text";
+                destinationInput.className = "form-input";
+                destinationInput.value = task.destinationFolder || "";
+                destinationInput.addEventListener("input", () => {
+                    task.destinationFolder = destinationInput.value;
+                    syncZipTaskChecks(task);
+                });
+                destinationGroup.appendChild(destinationLabel);
+                destinationGroup.appendChild(destinationInput);
+                item.appendChild(destinationGroup);
+            }
+        }
+
         list.appendChild(item);
     });
 }
 
 // task export
 function exportExerciseConfig() {
-    if (!teacherState.analysisCompleted) {
+    const hasTasks = Array.isArray(teacherState.generatedTasks)
+        ? teacherState.generatedTasks.length > 0
+        : false;
+    if (!teacherState.analysisCompleted && !hasTasks) {
         alert("Please run ‘Analyze differences’ first.");
         showTeacherToast("Run Analyze first", "error");
         return;
@@ -1390,6 +1646,10 @@ document.addEventListener("DOMContentLoaded", () => {
     bindTeacherUiEvents();
     // Initial guardrail state: analyze is disabled until start+target are saved
     updateWorkflowUi();
+    syncManualTaskControls();
+
+    const editor = document.getElementById("tasksEditor");
+    if (editor) editor.classList.remove("hidden");
 
     // Use current filesystem as initial structure in teacher mode
     if (!fileSystem) {

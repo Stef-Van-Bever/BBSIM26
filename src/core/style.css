@@ -1611,6 +1611,43 @@ body {
     border-radius: 12px;
 }
 
+.task-add-panel {
+    margin-bottom: 16px;
+    padding: 12px;
+    border: 1px dashed #d1d5db;
+    border-radius: 10px;
+    background: #f9fafb;
+}
+
+.task-add-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.task-add-select {
+    min-width: 240px;
+}
+
+.task-params {
+    display: grid;
+    gap: 10px;
+}
+
+.task-param-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    margin-bottom: 6px;
+}
+
+.task-entries-input {
+    min-height: 80px;
+}
+
 .task-item {
     padding: 12px;
     border: 1px solid #e5e7eb;
@@ -1619,6 +1656,10 @@ body {
     display: flex;
     flex-direction: column;
     gap: 8px;
+}
+
+.task-item .task-param-group {
+    margin-top: 6px;
 }
 
 .task-header {
