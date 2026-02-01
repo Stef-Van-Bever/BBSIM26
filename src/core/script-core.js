@@ -879,7 +879,8 @@ function evaluateCheck(check) {
         case "zip-exists":
             if (!requireCheckFields(check, ["path"])) return false;
             if (!check.path.endsWith(".zip")) return false;
-            return fileExists(check.path);
+            const zipItem = getFileByPath(check.path);
+            return !!zipItem?.isZip;
 
         case "zip-contains": {
             if (!requireCheckFields(check, ["zipPath", "entries"])) return false;
