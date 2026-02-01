@@ -2526,39 +2526,19 @@ function extractZipToFolder(zipFile, destinationPath) {
     const destinationFolder = getFolder(destinationPath);
     if (!destinationFolder) return null;
 
-    const baseFolderName = zipFile.name.replace(".zip", "");
-    const extractedFolder = {
-        name: baseFolderName,
-        type: "folder",
-        children: deepClone(zipFile.compressedContents),
-    };
+    const contents = deepClone(zipFile.compressedContents);
+    const addedNames = [];
 
-    addWithUniqueName(destinationFolder.children, extractedFolder);
-    return extractedFolder.name;
+    contents.forEach((item) => {
+        addWithUniqueName(destinationFolder.children, item);
+        addedNames.push(item.name);
+    });
+
+    return { mode: "items", names: addedNames };
 }
 
 function extractZipIntoCurrentFolder(zipFile) {
-    // INVARIANT: keep existing guard
-    if (
-        !zipFile.compressedContents ||
-        zipFile.compressedContents.length === 0
-    ) {
-        return;
-    }
-
-    const folder = getCurrentFolder();
-    const baseFolderName = zipFile.name.replace(".zip", "");
-
-    const extractedFolder = {
-        name: baseFolderName,
-        type: "folder",
-        children: deepClone(zipFile.compressedContents),
-    };
-
-    // INVARIANT (SYSTEM OPERATION):
-    // Extract MUST auto-resolve name conflicts (folders/files) via addWithUniqueName/ensureUniqueChildName.
-
-    addWithUniqueName(folder.children, extractedFolder);
+    extractZipToFolder(zipFile, currentPath);
 }
 
 function getDefaultExtractDestinationPath() {
@@ -2730,22 +2710,22 @@ function confirmExtractToDestination() {
         title: "Extracting...",
         durationMs: 2000,
         action: () => {
-            const extractedFolderName = extractZipToFolder(
+            const extractedResult = extractZipToFolder(
                 zipFile,
                 destinationPath,
             );
 
-            if (!extractedFolderName) return;
+            if (!extractedResult) return;
 
             if (extractWizardState.showAfterComplete) {
                 navigate(destinationPath);
-                selectedItems = [extractedFolderName];
+                selectedItems = extractedResult.names;
                 renderAll();
                 return;
             }
 
             if (destinationPath === currentPath) {
-                selectedItems = [extractedFolderName];
+                selectedItems = extractedResult.names;
                 renderAll();
             }
         },
