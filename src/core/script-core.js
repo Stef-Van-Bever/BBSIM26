@@ -742,6 +742,13 @@ function fileExists(path) {
     return folder?.children?.some((c) => c.name === fileName);
 }
 
+function getFileByPath(path) {
+    const folderPath = getParentPath(path);
+    const fileName = getNameFromPath(path);
+    const folder = getFolder(folderPath);
+    return folder?.children?.find((c) => c.name === fileName) || null;
+}
+
 function recycleBinHasItem(type, path) {
     if (!path || !type) return false;
     if (!Array.isArray(recycleBin)) return false;
@@ -868,6 +875,72 @@ function evaluateCheck(check) {
                 !folderExists(check.path) &&
                 !recycleBinHasItem("folder", check.path)
             );
+
+        case "zip-exists":
+            if (!requireCheckFields(check, ["path"])) return false;
+            if (!check.path.endsWith(".zip")) return false;
+            return fileExists(check.path);
+
+        case "zip-contains": {
+            if (!requireCheckFields(check, ["zipPath", "entries"])) return false;
+            const zipItem = getFileByPath(check.zipPath);
+            if (!zipItem || !zipItem.name?.endsWith(".zip")) return false;
+            if (!zipItem.zipMeta || !Array.isArray(zipItem.zipMeta.entries)) {
+                console.warn("zip-contains check: zipMeta missing", check);
+                return false;
+            }
+
+            const entries = Array.isArray(check.entries) ? check.entries : [];
+            const mode = check.mode === "any" ? "any" : "all";
+
+            if (mode === "any") {
+                return entries.some((e) => zipItem.zipMeta.entries.includes(e));
+            }
+
+            return entries.every((e) => zipItem.zipMeta.entries.includes(e));
+        }
+
+        case "zip-extracted-to": {
+            if (
+                !requireCheckFields(check, [
+                    "zipPath",
+                    "destinationFolder",
+                    "expectEntries",
+                ])
+            ) {
+                return false;
+            }
+
+            if (!fileExists(check.zipPath)) return false;
+            if (!folderExists(check.destinationFolder)) return false;
+
+            const expected = Array.isArray(check.expectEntries)
+                ? check.expectEntries
+                : [];
+
+            return expected.every((entry) => {
+                if (typeof entry === "string") {
+                    const entryPath = joinPathMultiRoot(
+                        check.destinationFolder,
+                        entry,
+                    );
+                    return fileExists(entryPath) || folderExists(entryPath);
+                }
+
+                if (!entry || typeof entry !== "object") return false;
+                if (!entry.name || !entry.type) return false;
+
+                const entryPath = joinPathMultiRoot(
+                    check.destinationFolder,
+                    entry.name,
+                );
+
+                if (entry.type === "file") return fileExists(entryPath);
+                if (entry.type === "folder") return folderExists(entryPath);
+
+                return false;
+            });
+        }
 
         default:
             debugLog("Unknown check type:", check.type);
