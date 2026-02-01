@@ -2052,6 +2052,18 @@ function beginRenamingSelectedItem() {
     return true;
 }
 
+function startRenameAfterNextRender() {
+    if (exerciseSubmitted) return;
+    if (currentPath === "Recycle Bin") return;
+    if (selectedItems.length !== 1) return;
+
+    requestAnimationFrame(() => {
+        if (exerciseSubmitted) return;
+        if (currentPath === "Recycle Bin") return;
+        beginRenamingSelectedItem();
+    });
+}
+
 function cancelRenaming() {
     renamingItem = null;
     renderFileList();
@@ -2519,6 +2531,7 @@ function handleCompress() {
 
             selectedItems = [finalZipName];
             renderAll();
+            startRenameAfterNextRender();
         },
     });
 }
