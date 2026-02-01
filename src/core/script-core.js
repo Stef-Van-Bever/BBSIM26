@@ -915,6 +915,7 @@ let deleteContext = {
     mode: "soft", // "soft" | "permanent"
     itemName: null,
 };
+let isProgressRunning = false;
 
 // ============================================================================
 // 6) DOM Cache (elements)
@@ -1880,6 +1881,11 @@ function getFileIcon(item) {
 }
 
 function updateNavigationButtons() {
+    if (isProgressRunning) {
+        setToolbarButtonsDisabled(true);
+        return;
+    }
+
     withEl("backBtn", (btn) => (btn.disabled = historyIndex <= 0));
     withEl(
         "forwardBtn",
@@ -1888,7 +1894,18 @@ function updateNavigationButtons() {
     withEl("upBtn", (btn) => (btn.disabled = currentPath === "C:"));
 }
 
+function setToolbarButtonsDisabled(disabled) {
+    document.querySelectorAll(".toolbar button").forEach((btn) => {
+        btn.disabled = disabled;
+    });
+}
+
 function updateToolbarState() {
+    if (isProgressRunning) {
+        setToolbarButtonsDisabled(true);
+        return;
+    }
+
     const hasSelection = selectedItems.length > 0;
     const isThisPC = currentPath === "This PC";
     const hasClipboard = clipboard !== null;
@@ -2488,25 +2505,41 @@ function extractZipIntoCurrentFolder(zipFile) {
 
 // Compress/Extract
 function handleCompress() {
+    if (isProgressRunning) return;
+
     const items = getSelectedNonZipItems();
     if (items.length === 0) return;
 
-    const zipName = getDefaultZipNameForItems(items);
-    const finalZipName = addZipFileToCurrentFolder(zipName, items);
+    runWithProgress({
+        title: "Compressing...",
+        durationMs: 2000,
+        action: () => {
+            const zipName = getDefaultZipNameForItems(items);
+            const finalZipName = addZipFileToCurrentFolder(zipName, items);
 
-    selectedItems = [finalZipName];
-    renderAll();
+            selectedItems = [finalZipName];
+            renderAll();
+        },
+    });
 }
 
 function handleExtract() {
+    if (isProgressRunning) return;
+
     const items = getSelectedZipItems();
     if (items.length === 0) return;
 
-    items.forEach((zipFile) => {
-        extractZipIntoCurrentFolder(zipFile);
-    });
+    runWithProgress({
+        title: "Extracting...",
+        durationMs: 2000,
+        action: () => {
+            items.forEach((zipFile) => {
+                extractZipIntoCurrentFolder(zipFile);
+            });
 
-    renderAll();
+            renderAll();
+        },
+    });
 }
 
 // New Item
@@ -2639,6 +2672,8 @@ function buildContextMenuForEmptyArea() {
 
 // Context Menu
 function showContextMenu(x, y, item) {
+    if (isProgressRunning) return;
+
     const adjustedX = Math.min(x, window.innerWidth - 200);
     const adjustedY = Math.min(y, window.innerHeight - 300);
 
@@ -3036,6 +3071,59 @@ function hideAllModals() {
         .forEach((m) => m.classList.remove("active"));
     modalOverlayEl.classList.remove("active");
     modalOverlayEl.classList.remove("overlay-closable", "overlay-blocked");
+}
+
+function runWithProgress({ title, durationMs = 2000, action }) {
+    if (isProgressRunning) return;
+
+    const modal = document.getElementById("zipProgressModal");
+    const titleEl = document.getElementById("zipProgressTitle");
+    const barEl = document.getElementById("zipProgressBar");
+
+    const safeDuration = Number.isFinite(durationMs) ? durationMs : 2000;
+
+    isProgressRunning = true;
+    if (typeof hideContextMenu === "function") hideContextMenu();
+    setToolbarButtonsDisabled(true);
+
+    const finalize = () => {
+        try {
+            if (typeof action === "function") action();
+        } finally {
+            if (modal) {
+                hideModal("zipProgressModal");
+            }
+            if (barEl) {
+                barEl.style.transition = "none";
+                barEl.style.width = "0%";
+            }
+            isProgressRunning = false;
+            setToolbarButtonsDisabled(false);
+            updateNavigationButtons();
+            updateToolbarState();
+        }
+    };
+
+    if (!modal || !titleEl || !barEl) {
+        setTimeout(finalize, safeDuration);
+        return;
+    }
+
+    titleEl.textContent = title || "Processing...";
+    barEl.style.transition = "none";
+    barEl.style.width = "0%";
+    // Force reflow so transition restarts reliably
+    // eslint-disable-next-line no-unused-expressions
+    barEl.offsetWidth;
+
+    showModal("zipProgressModal");
+
+    barEl.style.transition = `width ${safeDuration}ms linear`;
+    requestAnimationFrame(() => {
+        barEl.style.width = "100%";
+    });
+
+    setTimeout(finalize, safeDuration);
 }
 
 function shakeModal(modalEl) {

@@ -7,15 +7,15 @@ Oefeningen rond comprimeren/uitpakken kunnen automatisch beoordeeld worden.
 
 **Beschrijving**
 
+- nieuwe tasks:
+    - `folder-zipped`
+    - `folder-extracted`
 - Nieuwe checks (minimaal):
     - `zip-exists` (path moet bestaan + `isZip:true`)
     - `zip-contains` (verwachte items in `compressedContents`)
     - `zip-not-exists` (optioneel)
 
 - Let op “fake zip”: student kan niet zomaar een file “.zip” aanmaken en slagen; check moet `isZip` gebruiken.
-- nieuwe tasks:
-    - `folder-zipped`
-    - `folder-extracted`
 
 **Succescriteria**
 
@@ -148,7 +148,7 @@ Oefeningen met restore/permanent-delete checks moeten kunnen starten met items i
 **Beschrijving**
 
 - Student fresh-start moet `recycleBin` initialiseren vanuit `exercise-config.json`:
-  - `initialRecycleBin` (exported by teacher configurator)
+    - `initialRecycleBin` (exported by teacher configurator)
 - Hiermee kunnen restore/permanent-delete taken slagen zonder eerst een item te verwijderen.
 
 **Succescriteria**
