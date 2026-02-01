@@ -129,3 +129,33 @@ Meer oefeningstypes kunnen evalueren zonder grote architectuurwijziging.
 - `/src/teacher/script-teacher.js` (UI/serializer indien nodig)
 
 ---
+
+# TECHNISCHE TODO — Next Phase (post-refactor)
+
+## TODO 07 — Checks uitbreiden: zip/extract checks via state (`isZip`, `compressedContents`)
+
+**Doel**
+Oefeningen rond comprimeren/uitpakken kunnen automatisch beoordeeld worden.
+
+**Beschrijving**
+
+- nieuwe tasks:
+    - `folder-zipped`
+    - `folder-extracted`
+- Nieuwe checks (minimaal):
+    - `zip-exists` (path moet bestaan + `isZip:true`)
+    - `zip-contains` (verwachte items in `compressedContents`)
+    - `zip-not-exists` (optioneel)
+
+- Let op “fake zip”: student kan niet zomaar een file “.zip” aanmaken en slagen; check moet `isZip` gebruiken.
+
+**Succescriteria**
+
+- Na compress: zip-check slaagt.
+- Na extract: extract gerelateerde check(s) kunnen slagen (afhankelijk van gekozen check design).
+- Een “nepbestand Archive.zip” zonder `isZip` faalt.
+
+**Nodige files**
+
+- `/src/core/script-core.js`
+- `/docs/checks.md`
