@@ -444,6 +444,144 @@ function getProtectedSelection(items, parentPath, selectedNames) {
     );
 }
 
+// --- Node identity helpers (UUID) ------------------------------------------
+function createFallbackUuid() {
+    const rand = Math.random().toString(16).slice(2, 10);
+    const ts = Date.now().toString(16);
+    return `uuid-${ts}-${rand}`;
+}
+
+function createUuid() {
+    if (
+        typeof globalThis !== "undefined" &&
+        globalThis.crypto &&
+        typeof globalThis.crypto.randomUUID === "function"
+    ) {
+        return globalThis.crypto.randomUUID();
+    }
+    return createFallbackUuid();
+}
+
+function isStructureNode(node) {
+    return node && (node.type === "file" || node.type === "folder");
+}
+
+function ensureNodeId(node) {
+    if (!isStructureNode(node)) return node;
+    if (typeof node.id !== "string" || node.id.trim() === "") {
+        node.id = createUuid();
+    }
+    return node;
+}
+
+function ensureNodeIdsRecursive(node) {
+    if (!isStructureNode(node)) return;
+
+    ensureNodeId(node);
+
+    if (node.type === "folder") {
+        if (!Array.isArray(node.children)) node.children = [];
+        node.children.forEach((child) => ensureNodeIdsRecursive(child));
+    }
+}
+
+function ensureStructureNodeIds(structure) {
+    if (!structure) return structure;
+
+    if (structure.type === "system" && Array.isArray(structure.roots)) {
+        structure.roots.forEach((root) => ensureNodeIdsRecursive(root));
+        return structure;
+    }
+
+    if (structure.type === "folder") {
+        ensureNodeIdsRecursive(structure);
+    }
+
+    return structure;
+}
+
+function ensureRecycleBinNodeIds(items) {
+    if (!Array.isArray(items)) return [];
+    items.forEach((item) => ensureNodeIdsRecursive(item));
+    return items;
+}
+
+function cloneNodeWithNewIds(node) {
+    const cloned = deepClone(node);
+    ensureNodeIdsRecursive(cloned);
+    return cloned;
+}
+
+/**
+ * Find a file/folder node by id in a structure root.
+ * Supports both system roots and single folder roots.
+ */
+function findNodeById(root, id) {
+    if (!root || !id) return null;
+
+    function search(node) {
+        if (!node) return null;
+        if (node.id === id) return node;
+        if (node.type !== "folder" || !Array.isArray(node.children)) return null;
+
+        for (const child of node.children) {
+            const found = search(child);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    if (root.type === "system" && Array.isArray(root.roots)) {
+        for (const systemRoot of root.roots) {
+            const found = search(systemRoot);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    if (root.type === "folder") return search(root);
+    return null;
+}
+
+/**
+ * Resolve absolute path for a node id from a structure root.
+ * Returns null when not found.
+ */
+function getPathById(root, id) {
+    if (!root || !id) return null;
+
+    function walk(node, currentPath) {
+        if (!node) return null;
+        if (node.id === id) return currentPath;
+        if (node.type !== "folder" || !Array.isArray(node.children)) return null;
+
+        for (const child of node.children) {
+            const childPath = joinPathMultiRoot(currentPath, child.name);
+            const foundPath = walk(child, childPath);
+            if (foundPath) return foundPath;
+        }
+        return null;
+    }
+
+    if (root.type === "system" && Array.isArray(root.roots)) {
+        for (const systemRoot of root.roots) {
+            const foundPath = walk(systemRoot, systemRoot.name);
+            if (foundPath) return foundPath;
+        }
+        return null;
+    }
+
+    if (root.type === "folder") {
+        const startPath = root.name || "C:";
+        return walk(root, startPath);
+    }
+
+    return null;
+}
+
+window.findNodeById = window.findNodeById || findNodeById;
+window.getPathById = window.getPathById || getPathById;
+
 // --- Naming helpers (SYSTEM operations: auto-rename for paste/restore/etc.) --
 /**
  * Resolve naming conflicts by auto-renaming.
@@ -472,6 +610,7 @@ function ensureUniqueChildName(children, desiredName) {
 // Name conflict resolver (SYSTEM operations only)
 function addWithUniqueName(children, item) {
     // Reuse the same naming logic everywhere (single source of truth)
+    ensureNodeIdsRecursive(item);
     const finalName = ensureUniqueChildName(children, item.name);
     item.name = finalName;
     children.push(item);
@@ -515,6 +654,7 @@ function flattenStructure(structure, currentPath = null) {
         const itemPath = joinPathMultiRoot(basePath, item.name);
 
         result.push({
+            id: item.id,
             name: item.name,
             type: item.type,
             path: itemPath,
@@ -712,6 +852,16 @@ async function loadExerciseConfig() {
             throw new Error("exercise-config.json not found");
         }
         const loadedConfig = await response.json();
+        const initialStructure = loadedConfig?.initialStructure
+            ? ensureStructureNodeIds(
+                  normalizeToSystemRoot(loadedConfig.initialStructure),
+              )
+            : loadedConfig?.initialStructure;
+        const initialRecycleBin = ensureRecycleBinNodeIds(
+            Array.isArray(loadedConfig?.initialRecycleBin)
+                ? loadedConfig.initialRecycleBin
+                : [],
+        );
         const tasks = window.TaskDSL?.normalizeTasks
             ? window.TaskDSL.normalizeTasks(loadedConfig?.tasks)
             : Array.isArray(loadedConfig?.tasks)
@@ -730,6 +880,8 @@ async function loadExerciseConfig() {
 
         window.exerciseConfig = {
             ...loadedConfig,
+            initialStructure,
+            initialRecycleBin,
             tasks,
         };
         debugLog("Exercise config loaded", window.exerciseConfig);
@@ -1082,11 +1234,12 @@ function normalizeToSystemRoot(structure) {
     // 2) Old format: { name:"C:", type:"folder", children:[...] }
 
     if (structure && Array.isArray(structure.roots)) {
-        return {
+        const normalized = {
             name: "This PC",
             type: "system",
             roots: deepClone(structure.roots),
         };
+        return ensureStructureNodeIds(normalized);
     }
 
     // Single root fallback
@@ -1095,11 +1248,12 @@ function normalizeToSystemRoot(structure) {
             ? deepClone(structure)
             : { name: "C:", type: "folder", children: [] };
 
-    return {
+    const normalized = {
         name: "This PC",
         type: "system",
         roots: [singleRoot],
     };
+    return ensureStructureNodeIds(normalized);
 }
 
 function getDefaultRootPath(systemRoot) {
@@ -1141,14 +1295,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         currentPath = getDefaultRootPath(fileSystem);
         history = [currentPath];
         historyIndex = 0;
-        recycleBin = Array.isArray(cfg?.initialRecycleBin)
-            ? deepClone(cfg.initialRecycleBin)
-            : [];
+        recycleBin = ensureRecycleBinNodeIds(
+            Array.isArray(cfg?.initialRecycleBin)
+                ? deepClone(cfg.initialRecycleBin)
+                : [],
+        );
     } else if (restored) {
         // =====================================================================
         // STUDENT MODE: RESTORE SAME-TAB SESSION
         // =====================================================================
-        fileSystem = restored.fileSystem;
+        fileSystem = ensureStructureNodeIds(restored.fileSystem);
         currentPath = restored.currentPath || getDefaultRootPath(fileSystem);
         history = Array.isArray(restored.history)
             ? restored.history
@@ -1157,9 +1313,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             typeof restored.historyIndex === "number"
                 ? restored.historyIndex
                 : 0;
-        recycleBin = Array.isArray(restored.recycleBin)
-            ? restored.recycleBin
-            : [];
+        recycleBin = ensureRecycleBinNodeIds(
+            Array.isArray(restored.recycleBin) ? restored.recycleBin : [],
+        );
 
         debugLog("Student session state restored", restored);
     } else {
@@ -1182,10 +1338,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         currentPath = getDefaultRootPath(fileSystem);
         history = [currentPath];
         historyIndex = 0;
-        recycleBin = Array.isArray(cfg?.initialRecycleBin)
-            ? deepClone(cfg.initialRecycleBin)
-            : [];
+        recycleBin = ensureRecycleBinNodeIds(
+            Array.isArray(cfg?.initialRecycleBin)
+                ? deepClone(cfg.initialRecycleBin)
+                : [],
+        );
     }
+
+    initialFileSystem = ensureStructureNodeIds(initialFileSystem);
+    fileSystem = ensureStructureNodeIds(fileSystem);
 
     // Instructions
     const instructions = getExerciseInstructions();
@@ -2385,6 +2546,7 @@ function performSoftDeleteToRecycleBin() {
         originalPath: currentPath,
         deletedAt: new Date().toISOString(),
     }));
+    ensureRecycleBinNodeIds(deletedItems);
 
     recycleBin = recycleBin.concat(deletedItems);
 
@@ -2473,6 +2635,7 @@ function handleRestore(itemName) {
 
     const originalPath = item.originalPath;
     const restoredItem = deepClone(item);
+    ensureNodeIdsRecursive(restoredItem);
     delete restoredItem.originalPath;
     delete restoredItem.deletedAt;
 
@@ -2487,12 +2650,20 @@ function handleRestore(itemName) {
             return;
         }
 
-        let restoredFolder = fileSystem.children.find(
+        const defaultRoot = getRootFolder("C:") || fileSystem?.roots?.[0];
+        if (!defaultRoot) return;
+
+        let restoredFolder = defaultRoot.children.find(
             (c) => c.name === "Restored" && c.type === "folder",
         );
         if (!restoredFolder) {
-            restoredFolder = { name: "Restored", type: "folder", children: [] };
-            fileSystem.children.push(restoredFolder);
+            restoredFolder = {
+                id: createUuid(),
+                name: "Restored",
+                type: "folder",
+                children: [],
+            };
+            defaultRoot.children.push(restoredFolder);
         }
 
         addWithUniqueName(restoredFolder.children, restoredItem);
@@ -2539,13 +2710,18 @@ function handleCopy() {
 
 // INVARIANT (SYSTEM OPERATION):
 // Paste MUST auto-resolve name conflicts using the shared naming helper(s).
-function pasteClipboardItemsIntoFolder(targetFolder, clipboardItems) {
+function pasteClipboardItemsIntoFolder(targetFolder, clipboardItems, operation) {
     clipboardItems.forEach((item) => {
         const uniqueName = ensureUniqueChildName(
             targetFolder.children,
             item.name,
         );
-        targetFolder.children.push({ ...deepClone(item), name: uniqueName });
+        const cloned =
+            operation === "copy"
+                ? cloneNodeWithNewIds(item)
+                : deepClone(item);
+        cloned.name = uniqueName;
+        targetFolder.children.push(cloned);
     });
 }
 
@@ -2580,7 +2756,11 @@ function handlePaste() {
 
     const targetFolder = getCurrentFolder();
 
-    pasteClipboardItemsIntoFolder(targetFolder, clipboard.items);
+    pasteClipboardItemsIntoFolder(
+        targetFolder,
+        clipboard.items,
+        clipboard.operation,
+    );
 
     if (
         shouldClearClipboardAfterPaste(
@@ -2626,6 +2806,7 @@ function addZipFileToCurrentFolder(zipName, compressedContents, zipMeta) {
     const folder = getCurrentFolder();
 
     const zipItem = {
+        id: createUuid(),
         name: zipName,
         type: "file",
         isZip: true,
@@ -2657,8 +2838,9 @@ function extractZipToFolder(zipFile, destinationPath) {
     const addedNames = [];
 
     contents.forEach((item) => {
-        addWithUniqueName(destinationFolder.children, item);
-        addedNames.push(item.name);
+        const clonedItem = cloneNodeWithNewIds(item);
+        addWithUniqueName(destinationFolder.children, clonedItem);
+        addedNames.push(clonedItem.name);
     });
 
     return { mode: "items", names: addedNames };
@@ -2933,9 +3115,19 @@ function createNewItem() {
 
     const folder = getCurrentFolder();
     if (type === "folder") {
-        folder.children.push({ name, type: "folder", children: [] });
+        folder.children.push({
+            id: createUuid(),
+            name,
+            type: "folder",
+            children: [],
+        });
     } else {
-        folder.children.push({ name, type: "file", content: content || "" });
+        folder.children.push({
+            id: createUuid(),
+            name,
+            type: "file",
+            content: content || "",
+        });
     }
 
     selectedItems = [name];
