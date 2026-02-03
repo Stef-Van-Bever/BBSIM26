@@ -15,7 +15,8 @@ We willen tasks opslaan in de exercise export. UI komt later.
     - move (file/folder)
     - rename (file/folder)
     - delete (file/folder)
-    - restore (file/folder) (indien jullie recycle-bin simuleren)
+    - restore (file/folder)
+    - copy (file/folder)
     - zip-create
     - zip-extract (unzip)
 
@@ -23,6 +24,8 @@ We willen tasks opslaan in de exercise export. UI komt later.
 
 - move:
     - `{ type:"move", subjectId:"<uuid>", fromPath:"...", toPath:"..." }`
+- copy:
+    - `{ type:"copy", subjectId:"<uuid>", fromPath:"...", toPath:"..." }`
 - rename:
     - `{ type:"rename", subjectId:"<uuid>", fromName:"...", toName:"..." }`
 - delete:
@@ -30,7 +33,7 @@ We willen tasks opslaan in de exercise export. UI komt later.
 - restore:
     - `{ type:"restore", subjectId:"<uuid>", toPath:"..." }`
 - zip-create:
-    - `{ type:"zip-create", inputIds:["<uuid>",...], outputName:"archief.zip", outputPath:"..." }`
+    - `{ type:"zip-create", inputIds:["<uuid>",...], outputName:"...", outputPath:"..." }`
 - zip-extract:
     - `{ type:"zip-extract", archiveId:"<uuid>", destPath:"..." }`
 

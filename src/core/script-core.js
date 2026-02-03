@@ -574,7 +574,7 @@ function buildInstructionChecklistFromTasks(tasks) {
 
         const label = document.createElement("label");
         label.className = "instruction-text";
-        label.textContent = task.description;
+        label.textContent = task.description || task.type || "Task";
 
         li.appendChild(checkbox);
         li.appendChild(label);
@@ -711,7 +711,27 @@ async function loadExerciseConfig() {
         if (!response.ok) {
             throw new Error("exercise-config.json not found");
         }
-        window.exerciseConfig = await response.json();
+        const loadedConfig = await response.json();
+        const tasks = window.TaskDSL?.normalizeTasks
+            ? window.TaskDSL.normalizeTasks(loadedConfig?.tasks)
+            : Array.isArray(loadedConfig?.tasks)
+              ? loadedConfig.tasks
+              : [];
+
+        if (window.TaskDSL?.validateTasks) {
+            const validation = window.TaskDSL.validateTasks(tasks);
+            if (!validation.valid) {
+                console.error(
+                    "Invalid Task DSL in exercise-config.json:",
+                    validation.errors,
+                );
+            }
+        }
+
+        window.exerciseConfig = {
+            ...loadedConfig,
+            tasks,
+        };
         debugLog("Exercise config loaded", window.exerciseConfig);
     } catch (err) {
         console.error("Failed to load exercise config:", err);
@@ -970,13 +990,14 @@ function evaluateCheck(check) {
 
 function evaluateTasksFromConfig(tasks) {
     return tasks.map((task) => {
-        const results = task.checks.map((check) => evaluateCheck(check));
-        const completed = results.every(Boolean);
+        const checks = Array.isArray(task?.checks) ? task.checks : [];
+        const results = checks.map((check) => evaluateCheck(check));
+        const completed = checks.length > 0 && results.every(Boolean);
 
         return {
             ...task,
             completed,
-            checks: task.checks.map((check, index) => ({
+            checks: checks.map((check, index) => ({
                 ...check,
                 passed: results[index],
             })),
@@ -1042,7 +1063,17 @@ window.exerciseConfig = window.exerciseConfig || {
  * Never read/write `exerciseConfig` directly; always go through window.exerciseConfig.
  */
 function getExerciseConfig() {
-    return window.exerciseConfig || { tasks: [] };
+    const cfg = window.exerciseConfig || {};
+    const tasks = window.TaskDSL?.normalizeTasks
+        ? window.TaskDSL.normalizeTasks(cfg.tasks)
+        : Array.isArray(cfg.tasks)
+          ? cfg.tasks
+          : [];
+
+    return {
+        ...cfg,
+        tasks,
+    };
 }
 
 function normalizeToSystemRoot(structure) {

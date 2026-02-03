@@ -1588,6 +1588,223 @@ function renderTasksEditor(tasks = teacherState.generatedTasks) {
     });
 }
 
+function makeLegacySubjectId(kind, path, fallback = "unknown") {
+    const raw = path || fallback;
+    const normalized =
+        typeof normalizePath === "function" ? normalizePath(raw) : raw;
+    return `legacy:${kind}:${normalized}`;
+}
+
+function getFirstCheck(task, type) {
+    if (!Array.isArray(task?.checks)) return null;
+    return task.checks.find((check) => check?.type === type) || null;
+}
+
+function convertLegacyTaskToDsl(task) {
+    const checks = Array.isArray(task?.checks) ? task.checks : [];
+
+    switch (task?.type) {
+        case "file-moved":
+        case "folder-moved": {
+            const moveCheck =
+                getFirstCheck(task, "file-moved") ||
+                getFirstCheck(task, "folder-moved");
+            if (!moveCheck?.from || !moveCheck?.to) {
+                return { error: `Missing move check data for "${task.type}"` };
+            }
+            return {
+                task: {
+                    type: "move",
+                    subjectId: makeLegacySubjectId(task.type, moveCheck.from),
+                    fromPath: moveCheck.from,
+                    toPath: moveCheck.to,
+                    strict: false,
+                    description: task.description || "",
+                    checks,
+                },
+            };
+        }
+
+        case "file-renamed": {
+            const renameCheck = getFirstCheck(task, "file-renamed");
+            if (!renameCheck?.from || !renameCheck?.to) {
+                return { error: `Missing rename check data for "${task.type}"` };
+            }
+            return {
+                task: {
+                    type: "rename",
+                    subjectId: makeLegacySubjectId(task.type, renameCheck.from),
+                    fromName: getNameFromPath(renameCheck.from),
+                    toName: getNameFromPath(renameCheck.to),
+                    strict: false,
+                    description: task.description || "",
+                    checks,
+                },
+            };
+        }
+
+        case "file-deleted":
+        case "folder-deleted":
+        case "file-permanently-deleted":
+        case "folder-permanently-deleted": {
+            const deleteCheck =
+                getFirstCheck(task, "file-not-exists") ||
+                getFirstCheck(task, "folder-not-exists") ||
+                checks[0];
+            if (!deleteCheck?.path) {
+                return { error: `Missing delete path for "${task.type}"` };
+            }
+            return {
+                task: {
+                    type: "delete",
+                    subjectId: makeLegacySubjectId(task.type, deleteCheck.path),
+                    fromPath: deleteCheck.path,
+                    strict: false,
+                    description: task.description || "",
+                    checks,
+                },
+            };
+        }
+
+        case "file-created":
+        case "folder-created": {
+            const createCheck =
+                getFirstCheck(task, "file-exists") ||
+                getFirstCheck(task, "folder-exists") ||
+                checks[0];
+            if (!createCheck?.path) {
+                return { error: `Missing create path for "${task.type}"` };
+            }
+            return {
+                task: {
+                    type: "create",
+                    subjectId: makeLegacySubjectId(task.type, createCheck.path),
+                    toPath: createCheck.path,
+                    strict: false,
+                    description: task.description || "",
+                    checks,
+                },
+            };
+        }
+
+        case "file-restored":
+        case "folder-restored": {
+            const restoreCheck =
+                getFirstCheck(task, "file-restored") ||
+                getFirstCheck(task, "folder-restored");
+            if (!restoreCheck?.path) {
+                return { error: `Missing restore path for "${task.type}"` };
+            }
+            return {
+                task: {
+                    type: "restore",
+                    subjectId: makeLegacySubjectId(task.type, restoreCheck.path),
+                    toPath: restoreCheck.path,
+                    strict: false,
+                    description: task.description || "",
+                    checks,
+                },
+            };
+        }
+
+        case "file-copied":
+        case "folder-copied": {
+            const copyCheck =
+                getFirstCheck(task, "file-copied") ||
+                getFirstCheck(task, "folder-copied");
+            if (!copyCheck?.from || !copyCheck?.to) {
+                return { error: `Missing copy check data for "${task.type}"` };
+            }
+            return {
+                task: {
+                    type: "copy",
+                    subjectId: makeLegacySubjectId(task.type, copyCheck.from),
+                    fromPath: copyCheck.from,
+                    toPath: copyCheck.to,
+                    strict: false,
+                    description: task.description || "",
+                    checks,
+                },
+            };
+        }
+
+        case "zip-compress": {
+            const zipExists = getFirstCheck(task, "zip-exists");
+            if (!zipExists?.path) {
+                return { error: `Missing zip output path for "${task.type}"` };
+            }
+            const zipContains = getFirstCheck(task, "zip-contains");
+            const inputIds = Array.isArray(zipContains?.entries)
+                ? zipContains.entries.map((entry) =>
+                      makeLegacySubjectId("entry", entry),
+                  )
+                : [];
+
+            return {
+                task: {
+                    type: "zip-create",
+                    inputIds,
+                    outputName: getNameFromPath(zipExists.path),
+                    outputPath: zipExists.path,
+                    strict: false,
+                    description: task.description || "",
+                    checks,
+                },
+            };
+        }
+
+        case "zip-extract": {
+            const extractCheck = getFirstCheck(task, "zip-extracted-to");
+            if (!extractCheck?.zipPath || !extractCheck?.destinationFolder) {
+                return { error: `Missing zip extract data for "${task.type}"` };
+            }
+
+            return {
+                task: {
+                    type: "zip-extract",
+                    archiveId: makeLegacySubjectId(
+                        "archive",
+                        extractCheck.zipPath,
+                    ),
+                    destPath: extractCheck.destinationFolder,
+                    strict: false,
+                    description: task.description || "",
+                    checks,
+                },
+            };
+        }
+
+        default:
+            return { error: `Task type "${task?.type || "unknown"}" is unsupported` };
+    }
+}
+
+function toDslTasks(tasks) {
+    const dslTypes = new Set(
+        Object.values(window.TaskDSL?.TASK_TYPES || {}),
+    );
+
+    const dslTasks = [];
+    const conversionErrors = [];
+
+    tasks.forEach((task, index) => {
+        if (dslTypes.has(task?.type)) {
+            dslTasks.push(task);
+            return;
+        }
+
+        const converted = convertLegacyTaskToDsl(task);
+        if (converted.task) {
+            dslTasks.push(converted.task);
+            return;
+        }
+
+        conversionErrors.push(`tasks[${index}]: ${converted.error}`);
+    });
+
+    return { dslTasks, conversionErrors };
+}
+
 // task export
 function exportExerciseConfig() {
     const hasTasks = Array.isArray(teacherState.generatedTasks)
@@ -1624,6 +1841,24 @@ function exportExerciseConfig() {
         return;
     }
 
+    const { dslTasks, conversionErrors } = toDslTasks(tasks);
+    if (conversionErrors.length > 0) {
+        alert(
+            `Task conversion failed. First error: ${conversionErrors[0]}`,
+        );
+        showTeacherToast("Task conversion failed", "error");
+        return;
+    }
+
+    const validation = window.TaskDSL?.validateTasks
+        ? window.TaskDSL.validateTasks(dslTasks)
+        : { valid: true, errors: [] };
+    if (!validation.valid) {
+        alert(`Task validation failed. First error: ${validation.errors[0]}`);
+        showTeacherToast("Invalid task data", "error");
+        return;
+    }
+
     const exportData = {
         meta: {
             title: teacherState.meta.title || "Untitled exercise",
@@ -1631,10 +1866,7 @@ function exportExerciseConfig() {
         },
         initialStructure: teacherState.initialStructure,
         initialRecycleBin: teacherState.initialRecycleBin || [],
-        tasks: tasks.map((task) => ({
-            description: task.description,
-            checks: task.checks,
-        })),
+        tasks: dslTasks,
     };
 
     const json = JSON.stringify(exportData, null, 2);
