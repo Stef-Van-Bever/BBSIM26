@@ -502,58 +502,142 @@
                 </div>
             </div>
             <div id="tasksEditor" class="tasks-editor hidden">
-                <h3>Generated tasks</h3>
+                <h3>Task Builder</h3>
                 <div class="task-add-panel">
                     <div class="task-add-row">
-                        <select
-                            id="manualTaskType"
-                            class="form-input task-add-select"
-                        >
-                            <option value="zip-compress">
-                                ZIP: compress selected items
-                            </option>
-                            <option value="zip-extract">
-                                UNZIP: extract archive to destination
-                            </option>
+                        <label for="manualTaskType">Task type</label>
+                        <select id="manualTaskType" class="form-input task-add-select">
+                            <option value="move">Move (file/folder)</option>
+                            <option value="copy">Copy (file/folder)</option>
+                            <option value="rename">Rename (file/folder)</option>
+                            <option value="delete">Delete (file/folder)</option>
+                            <option value="permanently-delete">Permanently delete (file/folder)</option>
+                            <option value="restore">Restore (file/folder)</option>
+                            <option value="zip-create">ZIP create</option>
+                            <option value="zip-extract">ZIP extract</option>
                         </select>
-                        <button id="addManualTaskBtn" class="btn-secondary">
-                            Add task
-                        </button>
+                    </div>
+                    <div class="task-add-row">
+                        <label class="task-strict-toggle">
+                            <input id="manualTaskStrictInput" type="checkbox" />
+                            Strict (must match action log)
+                        </label>
                     </div>
                     <div class="task-params">
                         <div class="task-param-group">
-                            <label for="manualZipPathInput">Zip path</label>
+                            <label for="manualTaskDescriptionInput">Description (optional)</label>
                             <input
-                                id="manualZipPathInput"
+                                id="manualTaskDescriptionInput"
                                 class="form-input"
                                 type="text"
-                                placeholder="C:\\Downloads\\Archive.zip"
+                                placeholder="What should the student do?"
                             />
                         </div>
-                        <div class="task-param-group">
-                            <label for="manualZipEntriesInput"
-                                >Entries (one per line)</label
-                            >
-                            <textarea
-                                id="manualZipEntriesInput"
-                                class="form-textarea task-entries-input"
-                                placeholder="Docs&#10;img.png"
-                            ></textarea>
+                        <div id="manualSubjectGroup" class="task-param-group">
+                            <label>Subject (file/folder)</label>
+                            <div class="task-inline-actions">
+                                <input
+                                    id="manualSubjectDisplay"
+                                    class="form-input"
+                                    type="text"
+                                    readonly
+                                    placeholder="No item selected"
+                                />
+                                <button id="manualSelectSubjectBtn" class="btn-secondary" type="button">
+                                    Select item
+                                </button>
+                                <button id="manualClearSubjectBtn" class="btn-secondary" type="button">
+                                    Clear
+                                </button>
+                            </div>
                         </div>
-                        <div
-                            id="manualDestinationGroup"
-                            class="task-param-group"
-                        >
-                            <label for="manualDestinationInput"
-                                >Destination folder</label
-                            >
+                        <div id="manualToPathGroup" class="task-param-group hidden">
+                            <label>Destination path</label>
+                            <div class="task-inline-actions">
+                                <input
+                                    id="manualToPathInput"
+                                    class="form-input"
+                                    type="text"
+                                    readonly
+                                    placeholder="Select destination folder"
+                                />
+                                <button id="manualSelectToPathBtn" class="btn-secondary" type="button">
+                                    Select folder
+                                </button>
+                            </div>
+                        </div>
+                        <div id="manualRenameGroup" class="task-param-group hidden">
+                            <label for="manualRenameToNameInput">New name</label>
                             <input
-                                id="manualDestinationInput"
+                                id="manualRenameToNameInput"
                                 class="form-input"
                                 type="text"
-                                placeholder="C:\\Docs\\Archive"
+                                placeholder="New file/folder name"
                             />
                         </div>
+                        <div id="manualZipCreateGroup" class="task-param-group hidden">
+                            <label>ZIP input nodes</label>
+                            <div class="task-inline-actions">
+                                <button id="manualAddZipInputBtn" class="btn-secondary" type="button">
+                                    Add selected node
+                                </button>
+                            </div>
+                            <div id="manualZipInputList" class="task-chip-list"></div>
+                            <label for="manualZipOutputNameInput">Output name</label>
+                            <input
+                                id="manualZipOutputNameInput"
+                                class="form-input"
+                                type="text"
+                                placeholder="Archive.zip"
+                            />
+                            <label>Output folder</label>
+                            <div class="task-inline-actions">
+                                <input
+                                    id="manualZipOutputPathInput"
+                                    class="form-input"
+                                    type="text"
+                                    readonly
+                                    placeholder="Select output folder"
+                                />
+                                <button id="manualSelectZipOutputPathBtn" class="btn-secondary" type="button">
+                                    Select folder
+                                </button>
+                            </div>
+                        </div>
+                        <div id="manualZipExtractGroup" class="task-param-group hidden">
+                            <label>Archive (.zip)</label>
+                            <div class="task-inline-actions">
+                                <input
+                                    id="manualZipArchiveInput"
+                                    class="form-input"
+                                    type="text"
+                                    readonly
+                                    placeholder="Select zip file"
+                                />
+                                <button id="manualSelectArchiveBtn" class="btn-secondary" type="button">
+                                    Select archive
+                                </button>
+                            </div>
+                            <label>Destination folder</label>
+                            <div class="task-inline-actions">
+                                <input
+                                    id="manualDestinationInput"
+                                    class="form-input"
+                                    type="text"
+                                    readonly
+                                    placeholder="Select destination folder"
+                                />
+                                <button id="manualSelectDestinationBtn" class="btn-secondary" type="button">
+                                    Select folder
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <p id="manualPickerHint" class="task-picker-hint hidden"></p>
+                    <div class="task-add-row">
+                        <button id="addManualTaskBtn" class="btn-secondary">
+                            Add task
+                        </button>
                     </div>
                 </div>
                 <div id="tasksList"></div>
@@ -723,6 +807,24 @@
                 </button>
                 <button id="confirmFolderPickerBtn" class="btn-primary">
                     Select folder
+                </button>
+            </div>
+        </div>
+
+        <!-- Task Node Picker Modal -->
+        <div id="taskNodePickerModal" class="modal" data-overlay-close="false">
+            <div class="modal-header">
+                <h2 id="taskNodePickerTitle">Select item</h2>
+            </div>
+            <div class="modal-body">
+                <div id="taskNodePickerList" class="folder-picker-list"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelTaskNodePickerBtn" class="btn-secondary">
+                    Cancel
+                </button>
+                <button id="confirmTaskNodePickerBtn" class="btn-primary">
+                    Select
                 </button>
             </div>
         </div>

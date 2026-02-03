@@ -48,6 +48,24 @@ const teacherUiLabels = {
     targetBtnBase: null,
 };
 
+const taskBuilderState = {
+    subject: null,
+    toPath: "",
+    archive: null,
+    zipInputNodes: [],
+    zipOutputPath: "",
+    picker: null,
+    pickerSelectedId: null,
+    pickerSelectedIds: [],
+    pickerExpandedIds: [],
+};
+
+function updateTasksEditorVisibility() {
+    const editor = document.getElementById("tasksEditor");
+    if (!editor) return;
+    editor.classList.toggle("hidden", !teacherState.startStructureSet);
+}
+
 function updateSaveButtonVisual(buttonEl, isSaved, baseLabel) {
     if (!buttonEl) return;
 
@@ -144,6 +162,7 @@ function updateWorkflowUi() {
             : "Run Analyze differences first";
     }
 
+    updateTasksEditorVisibility();
     updateWorkflowStepper();
 }
 
@@ -156,10 +175,8 @@ function resetTeacherWorkflowState() {
     teacherState.targetRecycleBin = null;
     teacherState.generatedTasks = [];
     teacherState.analysisCompleted = false;
+    resetTaskBuilderDraft();
 
-    // Keep tasks editor visible for manual task creation
-    const editor = document.getElementById("tasksEditor");
-    if (editor) editor.classList.remove("hidden");
     renderTasksEditor([]);
 
     // Restore button labels
@@ -213,6 +230,7 @@ function bindTeacherUiEvents() {
             teacherState.targetRecycleBin = null;
             teacherState.analysisCompleted = false;
             teacherState.generatedTasks = [];
+            renderTasksEditor([]);
 
             // Also remove visual "Saved ✓" on target button
             const targetBtn =
@@ -266,6 +284,7 @@ function bindTeacherUiEvents() {
             // Changing target invalidates previous analysis
             teacherState.analysisCompleted = false;
             teacherState.generatedTasks = [];
+            renderTasksEditor([]);
 
             teacherState.targetStructure = deepClone(fileSystem);
             teacherState.targetRecycleBin = deepClone(recycleBin);
@@ -314,6 +333,7 @@ function bindTeacherUiEvents() {
             const manualTasks = Array.isArray(teacherState.generatedTasks)
                 ? teacherState.generatedTasks.filter(
                       (task) =>
+                          task.isManual === true ||
                           task.type === "zip-compress" ||
                           task.type === "zip-extract",
                   )
@@ -339,31 +359,7 @@ function bindTeacherUiEvents() {
         exportBtn.addEventListener("click", exportExerciseConfig);
     }
 
-    const manualTypeSelect = document.getElementById("manualTaskType");
-    const addManualTaskBtn = document.getElementById("addManualTaskBtn");
-
-    if (manualTypeSelect) {
-        manualTypeSelect.addEventListener("change", () => {
-            syncManualTaskControls();
-        });
-    }
-
-    if (addManualTaskBtn) {
-        addManualTaskBtn.addEventListener("click", () => {
-            const task = buildManualZipTaskFromInputs();
-            if (!task) return;
-
-            teacherState.generatedTasks = Array.isArray(
-                teacherState.generatedTasks,
-            )
-                ? teacherState.generatedTasks
-                : [];
-            teacherState.generatedTasks.push(task);
-            renderTasksEditor(teacherState.generatedTasks);
-            updateWorkflowUi();
-            showTeacherToast("Task added");
-        });
-    }
+    bindTaskBuilderEvents();
 
     // When teacher resets the filesystem, the saved snapshots are no longer valid.
     const confirmResetBtn = document.getElementById("confirmResetBtn");
@@ -386,15 +382,6 @@ function bindTeacherUiEvents() {
         });
 }
 
-function syncManualTaskControls() {
-    const typeSelect = document.getElementById("manualTaskType");
-    const destinationGroup = document.getElementById("manualDestinationGroup");
-    if (!typeSelect || !destinationGroup) return;
-
-    const isExtract = typeSelect.value === "zip-extract";
-    destinationGroup.classList.toggle("hidden", !isExtract);
-}
-
 function parseEntriesInput(value) {
     return (value || "")
         .split(/\r?\n/)
@@ -402,70 +389,569 @@ function parseEntriesInput(value) {
         .filter(Boolean);
 }
 
-function buildManualZipTaskFromInputs() {
-    const typeSelect = document.getElementById("manualTaskType");
-    const zipPathInput = document.getElementById("manualZipPathInput");
-    const entriesInput = document.getElementById("manualZipEntriesInput");
-    const destinationInput = document.getElementById("manualDestinationInput");
-
-    if (!typeSelect || !zipPathInput || !entriesInput) return null;
-
-    const taskType = typeSelect.value;
-    const zipPath = zipPathInput.value.trim();
-    const entries = parseEntriesInput(entriesInput.value);
-    const destinationFolder = destinationInput?.value.trim() || "";
-
-    if (!zipPath) {
-        alert("Geef een zip pad op.");
-        return null;
-    }
-
-    if (entries.length === 0) {
-        alert("Voeg minstens één entry toe.");
-        return null;
-    }
-
-    if (taskType === "zip-extract" && !destinationFolder) {
-        alert("Geef een doelmap op.");
-        return null;
-    }
-
-    if (taskType === "zip-extract") {
-        const task = {
-            type: "zip-extract",
-            description: "",
-            zipPath,
-            entries,
-            destinationFolder,
-            checks: [
-                {
-                    type: "zip-extracted-to",
-                    zipPath,
-                    destinationFolder,
-                    expectEntries: entries,
-                },
-            ],
-        };
-        task.description = generateDefaultTaskDescription(task);
-        return task;
-    }
-
-    const task = {
-        type: "zip-compress",
-        description: "",
-        zipPath,
-        entries,
-        checks: [
-            { type: "zip-exists", path: zipPath },
-            {
-                type: "zip-contains",
-                zipPath,
-                entries,
-                mode: "all",
-            },
-        ],
+function getTaskBuilderEls() {
+    return {
+        typeSelect: document.getElementById("manualTaskType"),
+        strictInput: document.getElementById("manualTaskStrictInput"),
+        descriptionInput: document.getElementById("manualTaskDescriptionInput"),
+        subjectGroup: document.getElementById("manualSubjectGroup"),
+        subjectDisplay: document.getElementById("manualSubjectDisplay"),
+        toPathGroup: document.getElementById("manualToPathGroup"),
+        toPathInput: document.getElementById("manualToPathInput"),
+        renameGroup: document.getElementById("manualRenameGroup"),
+        renameToNameInput: document.getElementById("manualRenameToNameInput"),
+        zipCreateGroup: document.getElementById("manualZipCreateGroup"),
+        zipInputList: document.getElementById("manualZipInputList"),
+        zipOutputNameInput: document.getElementById("manualZipOutputNameInput"),
+        zipOutputPathInput: document.getElementById("manualZipOutputPathInput"),
+        zipExtractGroup: document.getElementById("manualZipExtractGroup"),
+        zipArchiveInput: document.getElementById("manualZipArchiveInput"),
+        destinationInput: document.getElementById("manualDestinationInput"),
+        pickerHint: document.getElementById("manualPickerHint"),
+        taskNodePickerModal: document.getElementById("taskNodePickerModal"),
+        taskNodePickerTitle: document.getElementById("taskNodePickerTitle"),
+        taskNodePickerList: document.getElementById("taskNodePickerList"),
+        confirmTaskNodePickerBtn: document.getElementById(
+            "confirmTaskNodePickerBtn",
+        ),
     };
-    task.description = generateDefaultTaskDescription(task);
+}
+
+function resetTaskBuilderDraft() {
+    taskBuilderState.subject = null;
+    taskBuilderState.toPath = "";
+    taskBuilderState.archive = null;
+    taskBuilderState.zipInputNodes = [];
+    taskBuilderState.zipOutputPath = "";
+    taskBuilderState.picker = null;
+    taskBuilderState.pickerSelectedId = null;
+    taskBuilderState.pickerSelectedIds = [];
+    taskBuilderState.pickerExpandedIds = [];
+
+    const els = getTaskBuilderEls();
+    if (els.descriptionInput) els.descriptionInput.value = "";
+    if (els.renameToNameInput) els.renameToNameInput.value = "";
+    if (els.zipOutputNameInput) els.zipOutputNameInput.value = "";
+    if (els.strictInput) els.strictInput.checked = false;
+
+    clearTaskPicker();
+    syncManualTaskControls();
+}
+
+function buildNodePickerItems() {
+    const items = [];
+
+    function walk(node, path, level, isRoot = false, parentId = null) {
+        if (!node) return;
+        items.push({
+            id: node.id,
+            type: node.type,
+            name: node.name,
+            path,
+            level,
+            isRoot,
+            parentId,
+            hasChildren:
+                node.type === "folder" &&
+                Array.isArray(node.children) &&
+                node.children.length > 0,
+            isZip: !!node.isZip || !!node.name?.endsWith?.(".zip"),
+        });
+
+        if (node.type !== "folder" || !Array.isArray(node.children)) return;
+        node.children.forEach((child) => {
+            const childPath = joinPathMultiRoot(path, child.name);
+            walk(child, childPath, level + 1, false, node.id);
+        });
+    }
+
+    const roots = fileSystem?.roots || [];
+    roots.forEach((root) => walk(root, root.name, 0, true));
+    return items;
+}
+
+function getFilteredNodePickerItems() {
+    const picker = taskBuilderState.picker;
+    if (!picker) return [];
+
+    const all = buildNodePickerItems();
+    if (picker.kind === "subject") {
+        return all;
+    }
+    if (picker.kind === "archive") {
+        return all.filter((node) => !node.isRoot && node.type === "file" && node.isZip);
+    }
+    if (picker.kind === "zip-input") {
+        return all.filter((node) => !node.isRoot);
+    }
+    if (picker.kind === "folder-path") {
+        return all.filter((node) => node.type === "folder");
+    }
+
+    return [];
+}
+
+function isPickerItemSelectable(picker, item) {
+    if (!picker || !item) return false;
+    if (picker.kind === "subject") return !item.isRoot;
+    return true;
+}
+
+function renderTaskNodePicker() {
+    const els = getTaskBuilderEls();
+    const list = els.taskNodePickerList;
+    const confirmBtn = els.confirmTaskNodePickerBtn;
+    if (!list || !confirmBtn) return;
+
+    const picker = taskBuilderState.picker;
+    const items = getFilteredNodePickerItems();
+    const multi = picker?.kind === "zip-input";
+
+    confirmBtn.textContent = multi ? "Add selected" : "Select";
+
+    if (items.length === 0) {
+        list.innerHTML = '<div class="folder-picker-empty">No matching items available.</div>';
+        return;
+    }
+
+    const selectedIds = new Set(taskBuilderState.pickerSelectedIds || []);
+    const expandedIds = new Set(taskBuilderState.pickerExpandedIds || []);
+    const byId = new Map(items.map((item) => [String(item.id), item]));
+
+    const isVisible = (item) => {
+        let parentId = item.parentId;
+        while (parentId) {
+            if (!expandedIds.has(parentId)) return false;
+            const parent = byId.get(String(parentId));
+            parentId = parent?.parentId || null;
+        }
+        return true;
+    };
+
+    const visibleItems = items.filter(isVisible);
+    list.innerHTML = visibleItems
+        .map((item) => {
+            const selected = multi
+                ? selectedIds.has(item.id)
+                : taskBuilderState.pickerSelectedId === item.id;
+            const selectable = isPickerItemSelectable(picker, item);
+            const canToggle = item.type === "folder" && item.hasChildren;
+            const expanded = expandedIds.has(item.id);
+            return `
+                <div class="folder-picker-item ${selected ? "selected" : ""} ${selectable ? "" : "picker-disabled"}" data-picker-id="${item.id}" style="--level:${item.level}">
+                    <button type="button" class="picker-toggle ${canToggle ? "" : "empty"}" data-toggle-id="${item.id}">
+                        ${canToggle ? (expanded ? "▾" : "▸") : ""}
+                    </button>
+                    ${multi ? `<input type="checkbox" ${selected ? "checked" : ""} />` : ""}
+                    <span>${item.path}</span>
+                </div>
+            `;
+        })
+        .join("");
+
+    list.querySelectorAll("[data-toggle-id]").forEach((btn) => {
+        btn.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const id = btn.dataset.toggleId;
+            const item = byId.get(String(id));
+            if (!item || item.type !== "folder" || !item.hasChildren) return;
+
+            const next = new Set(taskBuilderState.pickerExpandedIds || []);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            taskBuilderState.pickerExpandedIds = Array.from(next);
+            renderTaskNodePicker();
+        });
+    });
+
+    list.querySelectorAll("[data-picker-id]").forEach((el) => {
+        el.addEventListener("click", () => {
+            const id = el.dataset.pickerId;
+            const item = byId.get(String(id));
+            if (!isPickerItemSelectable(picker, item)) return;
+            if (multi) {
+                const set = new Set(taskBuilderState.pickerSelectedIds || []);
+                if (set.has(id)) set.delete(id);
+                else set.add(id);
+                taskBuilderState.pickerSelectedIds = Array.from(set);
+            } else {
+                taskBuilderState.pickerSelectedId = id;
+            }
+            renderTaskNodePicker();
+        });
+    });
+}
+
+function openTaskNodePicker(config) {
+    const els = getTaskBuilderEls();
+    const allItems = buildNodePickerItems();
+    taskBuilderState.picker = config;
+    taskBuilderState.pickerSelectedId = null;
+    taskBuilderState.pickerSelectedIds = [];
+    taskBuilderState.pickerExpandedIds = allItems
+        .filter((item) => item.isRoot)
+        .map((item) => item.id);
+
+    if (els.taskNodePickerTitle) {
+        els.taskNodePickerTitle.textContent = config.title || "Select item";
+    }
+
+    renderTaskNodePicker();
+    showModal("taskNodePickerModal");
+}
+
+function applyTaskNodePickerSelection() {
+    const picker = taskBuilderState.picker;
+    if (!picker) return;
+
+    const items = getFilteredNodePickerItems();
+    const byId = new Map(items.map((item) => [String(item.id), item]));
+
+    if (picker.kind === "zip-input") {
+        const ids = taskBuilderState.pickerSelectedIds || [];
+        if (ids.length === 0) {
+            alert("Select at least one item.");
+            return;
+        }
+
+        ids.forEach((id) => {
+            const item = byId.get(String(id));
+            if (!item) return;
+            const exists = taskBuilderState.zipInputNodes.some((n) => n.id === item.id);
+            if (!exists) {
+                taskBuilderState.zipInputNodes.push({
+                    id: item.id,
+                    path: item.path,
+                    name: item.name,
+                    type: item.type,
+                });
+            }
+        });
+    } else {
+        const item = byId.get(String(taskBuilderState.pickerSelectedId));
+        if (!item) {
+            alert("Select an item first.");
+            return;
+        }
+
+        if (picker.kind === "subject") {
+            taskBuilderState.subject = {
+                id: item.id,
+                path: item.path,
+                name: item.name,
+                type: item.type,
+            };
+        } else if (picker.kind === "archive") {
+            taskBuilderState.archive = {
+                id: item.id,
+                path: item.path,
+                name: item.name,
+                type: item.type,
+            };
+        } else if (picker.kind === "folder-path") {
+            if (picker.target === "to-path" || picker.target === "zip-destination") {
+                taskBuilderState.toPath = item.path;
+            } else if (picker.target === "zip-output-path") {
+                taskBuilderState.zipOutputPath = item.path;
+            }
+        }
+    }
+
+    clearTaskPicker();
+    syncManualTaskControls();
+}
+
+function bindTaskBuilderEvents() {
+    const els = getTaskBuilderEls();
+    if (!els.typeSelect) return;
+
+    els.typeSelect.addEventListener("change", syncManualTaskControls);
+
+    document.getElementById("manualSelectSubjectBtn")?.addEventListener("click", () => {
+        openTaskNodePicker({
+            kind: "subject",
+            title: "Select file or folder",
+        });
+    });
+
+    document.getElementById("manualClearSubjectBtn")?.addEventListener("click", () => {
+        taskBuilderState.subject = null;
+        syncManualTaskControls();
+    });
+
+    document.getElementById("manualSelectToPathBtn")?.addEventListener("click", () => {
+        openTaskNodePicker({
+            kind: "folder-path",
+            target: "to-path",
+            title: "Select destination folder",
+        });
+    });
+
+    document.getElementById("manualAddZipInputBtn")?.addEventListener("click", () => {
+        openTaskNodePicker({
+            kind: "zip-input",
+            title: "Select ZIP input items",
+        });
+    });
+
+    document
+        .getElementById("manualSelectZipOutputPathBtn")
+        ?.addEventListener("click", () => {
+            openTaskNodePicker({
+                kind: "folder-path",
+                target: "zip-output-path",
+                title: "Select ZIP output folder",
+            });
+        });
+
+    document.getElementById("manualSelectArchiveBtn")?.addEventListener("click", () => {
+        openTaskNodePicker({
+            kind: "archive",
+            title: "Select ZIP archive",
+        });
+    });
+
+    document
+        .getElementById("manualSelectDestinationBtn")
+        ?.addEventListener("click", () => {
+            openTaskNodePicker({
+                kind: "folder-path",
+                target: "zip-destination",
+                title: "Select destination folder",
+            });
+        });
+
+    document
+        .getElementById("cancelTaskNodePickerBtn")
+        ?.addEventListener("click", clearTaskPicker);
+
+    document
+        .getElementById("confirmTaskNodePickerBtn")
+        ?.addEventListener("click", applyTaskNodePickerSelection);
+
+    document.getElementById("addManualTaskBtn")?.addEventListener("click", () => {
+        const task = buildManualDslTaskFromInputs();
+        if (!task) return;
+
+        teacherState.generatedTasks = Array.isArray(teacherState.generatedTasks)
+            ? teacherState.generatedTasks
+            : [];
+        teacherState.generatedTasks.push(task);
+        renderTasksEditor(teacherState.generatedTasks);
+        resetTaskBuilderDraft();
+        updateWorkflowUi();
+        showTeacherToast("Task added");
+    });
+
+    syncManualTaskControls();
+}
+
+function renderZipInputNodeChips() {
+    const els = getTaskBuilderEls();
+    if (!els.zipInputList) return;
+
+    els.zipInputList.innerHTML = taskBuilderState.zipInputNodes
+        .map(
+            (node, index) => `
+                <span class="task-chip">
+                    ${node.path}
+                    <button type="button" data-zip-input-index="${index}" title="Remove">&times;</button>
+                </span>
+            `,
+        )
+        .join("");
+
+    els.zipInputList
+        .querySelectorAll("[data-zip-input-index]")
+        .forEach((btn) => {
+            btn.addEventListener("click", () => {
+                const idx = Number(btn.dataset.zipInputIndex);
+                taskBuilderState.zipInputNodes.splice(idx, 1);
+                renderZipInputNodeChips();
+            });
+        });
+}
+
+function syncManualTaskControls() {
+    const els = getTaskBuilderEls();
+    const type = els.typeSelect?.value;
+    if (!type) return;
+
+    const needsSubject = [
+        "move",
+        "copy",
+        "rename",
+        "delete",
+        "permanently-delete",
+        "restore",
+    ].includes(type);
+
+    els.subjectGroup?.classList.toggle("hidden", !needsSubject);
+    els.toPathGroup?.classList.toggle("hidden", !(type === "move" || type === "copy"));
+    els.renameGroup?.classList.toggle("hidden", type !== "rename");
+    els.zipCreateGroup?.classList.toggle("hidden", type !== "zip-create");
+    els.zipExtractGroup?.classList.toggle("hidden", type !== "zip-extract");
+
+    if (els.subjectDisplay) {
+        els.subjectDisplay.value = taskBuilderState.subject
+            ? `${taskBuilderState.subject.path} (${taskBuilderState.subject.id})`
+            : "";
+    }
+
+    if (els.toPathInput) els.toPathInput.value = taskBuilderState.toPath || "";
+    if (els.zipArchiveInput) {
+        els.zipArchiveInput.value = taskBuilderState.archive
+            ? taskBuilderState.archive.path
+            : "";
+    }
+    if (els.zipOutputPathInput) {
+        els.zipOutputPathInput.value = taskBuilderState.zipOutputPath || "";
+    }
+    if (els.destinationInput) {
+        els.destinationInput.value = taskBuilderState.toPath || "";
+    }
+
+    renderZipInputNodeChips();
+}
+
+function clearTaskPicker() {
+    taskBuilderState.picker = null;
+    taskBuilderState.pickerSelectedId = null;
+    taskBuilderState.pickerSelectedIds = [];
+    taskBuilderState.pickerExpandedIds = [];
+    hideModal("taskNodePickerModal");
+
+    const hint = getTaskBuilderEls().pickerHint;
+    if (hint) {
+        hint.textContent = "";
+        hint.classList.add("hidden");
+    }
+}
+
+function makeTaskDescriptionFallback(type, data) {
+    switch (type) {
+        case "move":
+            return `Move "${data.subject?.name || "item"}" to "${data.toPath}".`;
+        case "copy":
+            return `Copy "${data.subject?.name || "item"}" to "${data.toPath}".`;
+        case "rename":
+            return `Rename "${data.subject?.name || "item"}" to "${data.toName}".`;
+        case "delete":
+            return `Delete "${data.subject?.name || "item"}".`;
+        case "permanently-delete":
+            return `Permanently delete "${data.subject?.name || "item"}".`;
+        case "restore":
+            return `Restore "${data.subject?.name || "item"}".`;
+        case "zip-create":
+            return `Create archive "${data.outputName}".`;
+        case "zip-extract":
+            return `Extract "${data.archive?.name || "archive"}" to "${data.destPath}".`;
+        default:
+            return "Do this task.";
+    }
+}
+
+function buildManualDslTaskFromInputs() {
+    const els = getTaskBuilderEls();
+    if (!els.typeSelect) return null;
+
+    const type = els.typeSelect.value;
+    const strict = !!els.strictInput?.checked;
+    const descriptionInput = els.descriptionInput?.value?.trim() || "";
+    const subject = taskBuilderState.subject;
+
+    const base = {
+        type,
+        strict,
+        isManual: true,
+    };
+
+    let task = null;
+
+    if (type === "move" || type === "copy") {
+        if (!subject || !taskBuilderState.toPath) {
+            alert("Select subject and destination folder.");
+            return null;
+        }
+        task = {
+            ...base,
+            subjectId: subject.id,
+            fromPath: subject.path,
+            toPath: taskBuilderState.toPath,
+        };
+    } else if (type === "rename") {
+        const toName = els.renameToNameInput?.value?.trim() || "";
+        if (!subject || !toName) {
+            alert("Select subject and enter a new name.");
+            return null;
+        }
+        task = {
+            ...base,
+            subjectId: subject.id,
+            fromName: subject.name,
+            toName,
+        };
+    } else if (type === "delete" || type === "permanently-delete") {
+        if (!subject) {
+            alert("Select a subject.");
+            return null;
+        }
+        task = {
+            ...base,
+            subjectId: subject.id,
+            fromPath: subject.path,
+        };
+    } else if (type === "restore") {
+        if (!subject) {
+            alert("Select a subject.");
+            return null;
+        }
+        task = {
+            ...base,
+            subjectId: subject.id,
+            toPath: subject.path,
+        };
+    } else if (type === "zip-create") {
+        const outputName = els.zipOutputNameInput?.value?.trim() || "";
+        if (
+            taskBuilderState.zipInputNodes.length === 0 ||
+            !outputName ||
+            !taskBuilderState.zipOutputPath
+        ) {
+            alert("Select zip inputs, output name and output folder.");
+            return null;
+        }
+        task = {
+            ...base,
+            inputIds: taskBuilderState.zipInputNodes.map((node) => node.id),
+            outputName,
+            outputPath: taskBuilderState.zipOutputPath,
+        };
+    } else if (type === "zip-extract") {
+        if (!taskBuilderState.archive || !taskBuilderState.toPath) {
+            alert("Select archive and destination folder.");
+            return null;
+        }
+        task = {
+            ...base,
+            archiveId: taskBuilderState.archive.id,
+            destPath: taskBuilderState.toPath,
+        };
+    }
+
+    if (!task) return null;
+
+    task.description =
+        descriptionInput ||
+        makeTaskDescriptionFallback(type, {
+            subject,
+            toPath: taskBuilderState.toPath,
+            toName: els.renameToNameInput?.value?.trim(),
+            outputName: els.zipOutputNameInput?.value?.trim(),
+            archive: taskBuilderState.archive,
+            destPath: taskBuilderState.toPath,
+        });
+
     return task;
 }
 
@@ -1488,12 +1974,12 @@ function renderTasksEditor(tasks = teacherState.generatedTasks) {
         return;
     }
 
-    editor.classList.remove("hidden");
+    updateTasksEditorVisibility();
     list.innerHTML = "";
 
     tasks.forEach((task, index) => {
         // default state
-        task.enabled = true;
+        task.enabled = task.enabled !== false;
         task.description = task.description || "";
 
         const item = document.createElement("div");
@@ -1512,10 +1998,21 @@ function renderTasksEditor(tasks = teacherState.generatedTasks) {
 
         const typeLabel = document.createElement("span");
         typeLabel.className = "task-type";
-        typeLabel.textContent = task.type;
+        typeLabel.textContent = `${task.type}${task.isManual ? " (manual)" : ""}`;
+
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "btn-secondary";
+        removeBtn.textContent = "Remove";
+        removeBtn.addEventListener("click", () => {
+            teacherState.generatedTasks.splice(index, 1);
+            renderTasksEditor(teacherState.generatedTasks);
+            updateWorkflowUi();
+        });
 
         header.appendChild(checkbox);
         header.appendChild(typeLabel);
+        header.appendChild(removeBtn);
 
         // description input
         const input = document.createElement("input");
@@ -1897,12 +2394,9 @@ function exportExerciseConfig() {
 
 document.addEventListener("DOMContentLoaded", () => {
     bindTeacherUiEvents();
+    resetTaskBuilderDraft();
     // Initial guardrail state: analyze is disabled until start+target are saved
     updateWorkflowUi();
-    syncManualTaskControls();
-
-    const editor = document.getElementById("tasksEditor");
-    if (editor) editor.classList.remove("hidden");
 
     // Use current filesystem as initial structure in teacher mode
     if (!fileSystem) {
