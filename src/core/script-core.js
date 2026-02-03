@@ -761,6 +761,7 @@ function resetAssignment() {
     clipboard = null;
     renamingItem = null;
     recycleBin = [];
+    resetActionLog();
 
     // --- Reset checklist UI ---
     resetChecklist();
@@ -1177,6 +1178,7 @@ let renamingItem = null;
 let recycleBin = []; // Stores deleted items with their original paths
 let sidePanelVisible = false;
 let studentChecklistState = [];
+let actionLog = [];
 let deleteContext = {
     mode: "soft", // "soft" | "permanent"
     itemName: null,
@@ -1191,6 +1193,34 @@ let extractWizardState = {
 let folderPickerState = {
     selectedPath: null,
 };
+
+function logEvent(type, payload = {}) {
+    const entry = {
+        id: createUuid(),
+        ts: Date.now(),
+        type,
+        payload: deepClone(payload),
+    };
+
+    actionLog.push(entry);
+    window.__BBSIM_ACTION_LOG__ = actionLog;
+    debugLog("Action event", entry);
+    return entry;
+}
+
+function getActionLog() {
+    return actionLog.map((entry) => deepClone(entry));
+}
+
+function resetActionLog() {
+    actionLog.length = 0;
+    window.__BBSIM_ACTION_LOG__ = actionLog;
+}
+
+window.logEvent = window.logEvent || logEvent;
+window.getActionLog = window.getActionLog || getActionLog;
+window.resetActionLog = window.resetActionLog || resetActionLog;
+window.__BBSIM_ACTION_LOG__ = actionLog;
 
 // ============================================================================
 // 6) DOM Cache (elements)
@@ -1347,6 +1377,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     initialFileSystem = ensureStructureNodeIds(initialFileSystem);
     fileSystem = ensureStructureNodeIds(fileSystem);
+    resetActionLog();
 
     // Instructions
     const instructions = getExerciseInstructions();
@@ -2394,6 +2425,7 @@ function validateRename(oldName, newName, items) {
 function applyRename(oldName, newName, items) {
     const item = items.find((i) => i.name === oldName);
     if (!item) return false;
+    const subjectId = item.id;
 
     pushHistory({
         type: "rename",
@@ -2404,6 +2436,12 @@ function applyRename(oldName, newName, items) {
 
     item.name = newName;
     selectedItems = [newName];
+    logEvent("RENAME", {
+        subjectId,
+        fromName: oldName,
+        toName: newName,
+        parentPath: currentPath,
+    });
     return true;
 }
 
@@ -2517,6 +2555,19 @@ function setDeleteModalTextForSelection(textEl, selectedObjects) {
 function performPermanentDeleteFromRecycleBin() {
     // 🔒 Permanent delete = undo volledig blokkeren (existing behavior)
     resetUndoHistory();
+    const toDelete = recycleBin.find(
+        (item) => item.name === deleteContext.itemName,
+    );
+    if (toDelete) {
+        logEvent("DELETE", {
+            subjectId: toDelete.id,
+            fromPath: joinPathMultiRoot(
+                toDelete.originalPath || "Recycle Bin",
+                toDelete.name,
+            ),
+        });
+    }
+
 
     recycleBin = recycleBin.filter(
         (item) => item.name !== deleteContext.itemName,
@@ -2547,6 +2598,13 @@ function performSoftDeleteToRecycleBin() {
         deletedAt: new Date().toISOString(),
     }));
     ensureRecycleBinNodeIds(deletedItems);
+
+    items.forEach((item) => {
+        logEvent("DELETE", {
+            subjectId: item.id,
+            fromPath: joinPathMultiRoot(currentPath, item.name),
+        });
+    });
 
     recycleBin = recycleBin.concat(deletedItems);
 
@@ -2640,6 +2698,7 @@ function handleRestore(itemName) {
     delete restoredItem.deletedAt;
 
     const originalFolder = getFolder(originalPath);
+    let restoredToPath = null;
 
     if (!originalFolder) {
         if (
@@ -2667,9 +2726,16 @@ function handleRestore(itemName) {
         }
 
         addWithUniqueName(restoredFolder.children, restoredItem);
+        restoredToPath = joinPathMultiRoot("C:\\Restored", restoredItem.name);
     } else {
         addWithUniqueName(originalFolder.children, restoredItem);
+        restoredToPath = joinPathMultiRoot(originalPath, restoredItem.name);
     }
+
+    logEvent("RESTORE", {
+        subjectId: restoredItem.id,
+        toPath: restoredToPath,
+    });
 
     recycleBin = recycleBin.filter((i) => i.name !== itemName);
     renderAll();
@@ -2711,6 +2777,8 @@ function handleCopy() {
 // INVARIANT (SYSTEM OPERATION):
 // Paste MUST auto-resolve name conflicts using the shared naming helper(s).
 function pasteClipboardItemsIntoFolder(targetFolder, clipboardItems, operation) {
+    const inserted = [];
+
     clipboardItems.forEach((item) => {
         const uniqueName = ensureUniqueChildName(
             targetFolder.children,
@@ -2722,7 +2790,13 @@ function pasteClipboardItemsIntoFolder(targetFolder, clipboardItems, operation) 
                 : deepClone(item);
         cloned.name = uniqueName;
         targetFolder.children.push(cloned);
+        inserted.push({
+            original: item,
+            inserted: cloned,
+        });
     });
+
+    return inserted;
 }
 
 function removeCutItemsFromSourceFolder(sourcePath, clipboardItems) {
@@ -2756,11 +2830,35 @@ function handlePaste() {
 
     const targetFolder = getCurrentFolder();
 
-    pasteClipboardItemsIntoFolder(
+    const inserted = pasteClipboardItemsIntoFolder(
         targetFolder,
         clipboard.items,
         clipboard.operation,
     );
+
+    inserted.forEach(({ original, inserted: insertedNode }) => {
+        const fromPath = joinPathMultiRoot(clipboard.sourcePath, original.name);
+        const toPath = joinPathMultiRoot(currentPath, insertedNode.name);
+
+        if (
+            clipboard.operation === "cut" &&
+            clipboard.sourcePath !== currentPath
+        ) {
+            logEvent("MOVE", {
+                subjectId: original.id,
+                fromPath,
+                toPath,
+            });
+            return;
+        }
+
+        logEvent("COPY", {
+            subjectId: original.id,
+            outputId: insertedNode.id,
+            fromPath,
+            toPath,
+        });
+    });
 
     if (
         shouldClearClipboardAfterPaste(
@@ -2836,14 +2934,16 @@ function extractZipToFolder(zipFile, destinationPath) {
 
     const contents = deepClone(zipFile.compressedContents);
     const addedNames = [];
+    const extractedIds = [];
 
     contents.forEach((item) => {
         const clonedItem = cloneNodeWithNewIds(item);
         addWithUniqueName(destinationFolder.children, clonedItem);
         addedNames.push(clonedItem.name);
+        if (clonedItem.id) extractedIds.push(clonedItem.id);
     });
 
-    return { mode: "items", names: addedNames };
+    return { mode: "items", names: addedNames, extractedIds };
 }
 
 function extractZipIntoCurrentFolder(zipFile) {
@@ -3025,6 +3125,11 @@ function confirmExtractToDestination() {
             );
 
             if (!extractedResult) return;
+            logEvent("ZIP_EXTRACT", {
+                archiveId: zipFile.id,
+                destPath: destinationPath,
+                extractedIds: extractedResult.extractedIds || [],
+            });
 
             if (extractWizardState.showAfterComplete) {
                 navigate(destinationPath);
@@ -3062,6 +3167,14 @@ function handleCompress() {
                 items,
                 zipMeta,
             );
+            const outputPath = joinPathMultiRoot(currentPath, finalZipName);
+            const createdZip = getFileByPath(outputPath);
+            logEvent("ZIP_CREATE", {
+                outputId: createdZip?.id || null,
+                outputPath,
+                outputName: finalZipName,
+                inputIds: items.map((item) => item.id).filter(Boolean),
+            });
 
             selectedItems = [finalZipName];
             renderAll();
@@ -3114,21 +3227,29 @@ function createNewItem() {
     }
 
     const folder = getCurrentFolder();
+    let createdNode = null;
     if (type === "folder") {
-        folder.children.push({
+        createdNode = {
             id: createUuid(),
             name,
             type: "folder",
             children: [],
-        });
+        };
+        folder.children.push(createdNode);
     } else {
-        folder.children.push({
+        createdNode = {
             id: createUuid(),
             name,
             type: "file",
             content: content || "",
-        });
+        };
+        folder.children.push(createdNode);
     }
+    logEvent("CREATE", {
+        subjectId: createdNode?.id || null,
+        toPath: joinPathMultiRoot(currentPath, name),
+        nodeType: type,
+    });
 
     selectedItems = [name];
     hideModal("newItemModal");
