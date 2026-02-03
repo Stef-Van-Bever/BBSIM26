@@ -506,9 +506,20 @@ function ensureRecycleBinNodeIds(items) {
     return items;
 }
 
+function regenerateNodeIdsRecursive(node) {
+    if (!isStructureNode(node)) return;
+
+    node.id = createUuid();
+
+    if (node.type === "folder") {
+        if (!Array.isArray(node.children)) node.children = [];
+        node.children.forEach((child) => regenerateNodeIdsRecursive(child));
+    }
+}
+
 function cloneNodeWithNewIds(node) {
     const cloned = deepClone(node);
-    ensureNodeIdsRecursive(cloned);
+    regenerateNodeIdsRecursive(cloned);
     return cloned;
 }
 
