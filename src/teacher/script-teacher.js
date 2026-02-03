@@ -1644,9 +1644,7 @@ function convertLegacyTaskToDsl(task) {
         }
 
         case "file-deleted":
-        case "folder-deleted":
-        case "file-permanently-deleted":
-        case "folder-permanently-deleted": {
+        case "folder-deleted": {
             const deleteCheck =
                 getFirstCheck(task, "file-not-exists") ||
                 getFirstCheck(task, "folder-not-exists") ||
@@ -1657,6 +1655,29 @@ function convertLegacyTaskToDsl(task) {
             return {
                 task: {
                     type: "delete",
+                    subjectId: makeLegacySubjectId(task.type, deleteCheck.path),
+                    fromPath: deleteCheck.path,
+                    strict: false,
+                    description: task.description || "",
+                    checks,
+                },
+            };
+        }
+
+        case "file-permanently-deleted":
+        case "folder-permanently-deleted": {
+            const deleteCheck =
+                getFirstCheck(task, "file-permanently-deleted") ||
+                getFirstCheck(task, "folder-permanently-deleted") ||
+                checks[0];
+            if (!deleteCheck?.path) {
+                return {
+                    error: `Missing permanent delete path for "${task.type}"`,
+                };
+            }
+            return {
+                task: {
+                    type: "permanently-delete",
                     subjectId: makeLegacySubjectId(task.type, deleteCheck.path),
                     fromPath: deleteCheck.path,
                     strict: false,

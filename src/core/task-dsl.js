@@ -9,6 +9,7 @@
         MOVE: "move",
         RENAME: "rename",
         DELETE: "delete",
+        PERMANENTLY_DELETE: "permanently-delete",
         CREATE: "create",
         RESTORE: "restore",
         COPY: "copy",
@@ -20,6 +21,7 @@
         [TASK_TYPES.MOVE]: ["subjectId", "fromPath", "toPath"],
         [TASK_TYPES.RENAME]: ["subjectId", "fromName", "toName"],
         [TASK_TYPES.DELETE]: ["subjectId", "fromPath"],
+        [TASK_TYPES.PERMANENTLY_DELETE]: ["subjectId", "fromPath"],
         [TASK_TYPES.CREATE]: ["subjectId", "toPath"],
         [TASK_TYPES.RESTORE]: ["subjectId", "toPath"],
         [TASK_TYPES.COPY]: ["subjectId", "fromPath", "toPath"],
@@ -57,6 +59,14 @@
      *  subjectId: string,
      *  fromPath: string
      * }} DeleteTask
+     */
+
+    /**
+     * @typedef {BaseTask & {
+     *  type: "permanently-delete",
+     *  subjectId: string,
+     *  fromPath: string
+     * }} PermanentlyDeleteTask
      */
 
     /**
@@ -102,7 +112,7 @@
      */
 
     /**
-     * @typedef {MoveTask|RenameTask|DeleteTask|CreateTask|RestoreTask|CopyTask|ZipCreateTask|ZipExtractTask} Task
+     * @typedef {MoveTask|RenameTask|DeleteTask|PermanentlyDeleteTask|CreateTask|RestoreTask|CopyTask|ZipCreateTask|ZipExtractTask} Task
      */
 
     function hasValue(task, fieldName) {

@@ -2559,12 +2559,13 @@ function performPermanentDeleteFromRecycleBin() {
         (item) => item.name === deleteContext.itemName,
     );
     if (toDelete) {
-        logEvent("DELETE", {
+        logEvent("PERMANENT_DELETE", {
             subjectId: toDelete.id,
             fromPath: joinPathMultiRoot(
                 toDelete.originalPath || "Recycle Bin",
                 toDelete.name,
             ),
+            source: "recycle-bin",
         });
     }
 
