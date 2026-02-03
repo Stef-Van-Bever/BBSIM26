@@ -1199,6 +1199,21 @@ body {
     padding-left: calc(10px + var(--level, 0) * 16px);
 }
 
+.picker-toggle {
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+
+.picker-toggle.empty {
+    cursor: default;
+}
+
 .folder-picker-item:hover {
     background: #e5f3ff;
 }
@@ -1206,6 +1221,11 @@ body {
 .folder-picker-item.selected {
     background: #cce8ff;
     color: #1e3a8a;
+}
+
+.folder-picker-item.picker-disabled {
+    opacity: 0.7;
+    cursor: default;
 }
 
 .folder-picker-empty {
@@ -1634,6 +1654,59 @@ body {
 .task-params {
     display: grid;
     gap: 10px;
+}
+
+.task-inline-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.task-inline-actions .form-input {
+    min-width: 260px;
+    flex: 1;
+}
+
+.task-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 10px;
+}
+
+.task-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+.task-chip button {
+    border: none;
+    background: transparent;
+    color: #475569;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+}
+
+.task-picker-hint {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #0f766e;
+}
+
+.task-strict-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #334155;
 }
 
 .task-param-group label {

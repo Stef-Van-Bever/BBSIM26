@@ -444,6 +444,155 @@ function getProtectedSelection(items, parentPath, selectedNames) {
     );
 }
 
+// --- Node identity helpers (UUID) ------------------------------------------
+function createFallbackUuid() {
+    const rand = Math.random().toString(16).slice(2, 10);
+    const ts = Date.now().toString(16);
+    return `uuid-${ts}-${rand}`;
+}
+
+function createUuid() {
+    if (
+        typeof globalThis !== "undefined" &&
+        globalThis.crypto &&
+        typeof globalThis.crypto.randomUUID === "function"
+    ) {
+        return globalThis.crypto.randomUUID();
+    }
+    return createFallbackUuid();
+}
+
+function isStructureNode(node) {
+    return node && (node.type === "file" || node.type === "folder");
+}
+
+function ensureNodeId(node) {
+    if (!isStructureNode(node)) return node;
+    if (typeof node.id !== "string" || node.id.trim() === "") {
+        node.id = createUuid();
+    }
+    return node;
+}
+
+function ensureNodeIdsRecursive(node) {
+    if (!isStructureNode(node)) return;
+
+    ensureNodeId(node);
+
+    if (node.type === "folder") {
+        if (!Array.isArray(node.children)) node.children = [];
+        node.children.forEach((child) => ensureNodeIdsRecursive(child));
+    }
+}
+
+function ensureStructureNodeIds(structure) {
+    if (!structure) return structure;
+
+    if (structure.type === "system" && Array.isArray(structure.roots)) {
+        structure.roots.forEach((root) => ensureNodeIdsRecursive(root));
+        return structure;
+    }
+
+    if (structure.type === "folder") {
+        ensureNodeIdsRecursive(structure);
+    }
+
+    return structure;
+}
+
+function ensureRecycleBinNodeIds(items) {
+    if (!Array.isArray(items)) return [];
+    items.forEach((item) => ensureNodeIdsRecursive(item));
+    return items;
+}
+
+function regenerateNodeIdsRecursive(node) {
+    if (!isStructureNode(node)) return;
+
+    node.id = createUuid();
+
+    if (node.type === "folder") {
+        if (!Array.isArray(node.children)) node.children = [];
+        node.children.forEach((child) => regenerateNodeIdsRecursive(child));
+    }
+}
+
+function cloneNodeWithNewIds(node) {
+    const cloned = deepClone(node);
+    regenerateNodeIdsRecursive(cloned);
+    return cloned;
+}
+
+/**
+ * Find a file/folder node by id in a structure root.
+ * Supports both system roots and single folder roots.
+ */
+function findNodeById(root, id) {
+    if (!root || !id) return null;
+
+    function search(node) {
+        if (!node) return null;
+        if (node.id === id) return node;
+        if (node.type !== "folder" || !Array.isArray(node.children)) return null;
+
+        for (const child of node.children) {
+            const found = search(child);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    if (root.type === "system" && Array.isArray(root.roots)) {
+        for (const systemRoot of root.roots) {
+            const found = search(systemRoot);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    if (root.type === "folder") return search(root);
+    return null;
+}
+
+/**
+ * Resolve absolute path for a node id from a structure root.
+ * Returns null when not found.
+ */
+function getPathById(root, id) {
+    if (!root || !id) return null;
+
+    function walk(node, currentPath) {
+        if (!node) return null;
+        if (node.id === id) return currentPath;
+        if (node.type !== "folder" || !Array.isArray(node.children)) return null;
+
+        for (const child of node.children) {
+            const childPath = joinPathMultiRoot(currentPath, child.name);
+            const foundPath = walk(child, childPath);
+            if (foundPath) return foundPath;
+        }
+        return null;
+    }
+
+    if (root.type === "system" && Array.isArray(root.roots)) {
+        for (const systemRoot of root.roots) {
+            const foundPath = walk(systemRoot, systemRoot.name);
+            if (foundPath) return foundPath;
+        }
+        return null;
+    }
+
+    if (root.type === "folder") {
+        const startPath = root.name || "C:";
+        return walk(root, startPath);
+    }
+
+    return null;
+}
+
+window.findNodeById = window.findNodeById || findNodeById;
+window.getPathById = window.getPathById || getPathById;
+
 // --- Naming helpers (SYSTEM operations: auto-rename for paste/restore/etc.) --
 /**
  * Resolve naming conflicts by auto-renaming.
@@ -472,6 +621,7 @@ function ensureUniqueChildName(children, desiredName) {
 // Name conflict resolver (SYSTEM operations only)
 function addWithUniqueName(children, item) {
     // Reuse the same naming logic everywhere (single source of truth)
+    ensureNodeIdsRecursive(item);
     const finalName = ensureUniqueChildName(children, item.name);
     item.name = finalName;
     children.push(item);
@@ -515,6 +665,7 @@ function flattenStructure(structure, currentPath = null) {
         const itemPath = joinPathMultiRoot(basePath, item.name);
 
         result.push({
+            id: item.id,
             name: item.name,
             type: item.type,
             path: itemPath,
@@ -574,7 +725,7 @@ function buildInstructionChecklistFromTasks(tasks) {
 
         const label = document.createElement("label");
         label.className = "instruction-text";
-        label.textContent = task.description;
+        label.textContent = task.description || task.type || "Task";
 
         li.appendChild(checkbox);
         li.appendChild(label);
@@ -621,6 +772,7 @@ function resetAssignment() {
     clipboard = null;
     renamingItem = null;
     recycleBin = [];
+    resetActionLog();
 
     // --- Reset checklist UI ---
     resetChecklist();
@@ -711,7 +863,39 @@ async function loadExerciseConfig() {
         if (!response.ok) {
             throw new Error("exercise-config.json not found");
         }
-        window.exerciseConfig = await response.json();
+        const loadedConfig = await response.json();
+        const initialStructure = loadedConfig?.initialStructure
+            ? ensureStructureNodeIds(
+                  normalizeToSystemRoot(loadedConfig.initialStructure),
+              )
+            : loadedConfig?.initialStructure;
+        const initialRecycleBin = ensureRecycleBinNodeIds(
+            Array.isArray(loadedConfig?.initialRecycleBin)
+                ? loadedConfig.initialRecycleBin
+                : [],
+        );
+        const tasks = window.TaskDSL?.normalizeTasks
+            ? window.TaskDSL.normalizeTasks(loadedConfig?.tasks)
+            : Array.isArray(loadedConfig?.tasks)
+              ? loadedConfig.tasks
+              : [];
+
+        if (window.TaskDSL?.validateTasks) {
+            const validation = window.TaskDSL.validateTasks(tasks);
+            if (!validation.valid) {
+                console.error(
+                    "Invalid Task DSL in exercise-config.json:",
+                    validation.errors,
+                );
+            }
+        }
+
+        window.exerciseConfig = {
+            ...loadedConfig,
+            initialStructure,
+            initialRecycleBin,
+            tasks,
+        };
         debugLog("Exercise config loaded", window.exerciseConfig);
     } catch (err) {
         console.error("Failed to load exercise config:", err);
@@ -970,13 +1154,14 @@ function evaluateCheck(check) {
 
 function evaluateTasksFromConfig(tasks) {
     return tasks.map((task) => {
-        const results = task.checks.map((check) => evaluateCheck(check));
-        const completed = results.every(Boolean);
+        const checks = Array.isArray(task?.checks) ? task.checks : [];
+        const results = checks.map((check) => evaluateCheck(check));
+        const completed = checks.length > 0 && results.every(Boolean);
 
         return {
             ...task,
             completed,
-            checks: task.checks.map((check, index) => ({
+            checks: checks.map((check, index) => ({
                 ...check,
                 passed: results[index],
             })),
@@ -1004,6 +1189,7 @@ let renamingItem = null;
 let recycleBin = []; // Stores deleted items with their original paths
 let sidePanelVisible = false;
 let studentChecklistState = [];
+let actionLog = [];
 let deleteContext = {
     mode: "soft", // "soft" | "permanent"
     itemName: null,
@@ -1018,6 +1204,34 @@ let extractWizardState = {
 let folderPickerState = {
     selectedPath: null,
 };
+
+function logEvent(type, payload = {}) {
+    const entry = {
+        id: createUuid(),
+        ts: Date.now(),
+        type,
+        payload: deepClone(payload),
+    };
+
+    actionLog.push(entry);
+    window.__BBSIM_ACTION_LOG__ = actionLog;
+    debugLog("Action event", entry);
+    return entry;
+}
+
+function getActionLog() {
+    return actionLog.map((entry) => deepClone(entry));
+}
+
+function resetActionLog() {
+    actionLog.length = 0;
+    window.__BBSIM_ACTION_LOG__ = actionLog;
+}
+
+window.logEvent = window.logEvent || logEvent;
+window.getActionLog = window.getActionLog || getActionLog;
+window.resetActionLog = window.resetActionLog || resetActionLog;
+window.__BBSIM_ACTION_LOG__ = actionLog;
 
 // ============================================================================
 // 6) DOM Cache (elements)
@@ -1042,7 +1256,17 @@ window.exerciseConfig = window.exerciseConfig || {
  * Never read/write `exerciseConfig` directly; always go through window.exerciseConfig.
  */
 function getExerciseConfig() {
-    return window.exerciseConfig || { tasks: [] };
+    const cfg = window.exerciseConfig || {};
+    const tasks = window.TaskDSL?.normalizeTasks
+        ? window.TaskDSL.normalizeTasks(cfg.tasks)
+        : Array.isArray(cfg.tasks)
+          ? cfg.tasks
+          : [];
+
+    return {
+        ...cfg,
+        tasks,
+    };
 }
 
 function normalizeToSystemRoot(structure) {
@@ -1051,11 +1275,12 @@ function normalizeToSystemRoot(structure) {
     // 2) Old format: { name:"C:", type:"folder", children:[...] }
 
     if (structure && Array.isArray(structure.roots)) {
-        return {
+        const normalized = {
             name: "This PC",
             type: "system",
             roots: deepClone(structure.roots),
         };
+        return ensureStructureNodeIds(normalized);
     }
 
     // Single root fallback
@@ -1064,11 +1289,12 @@ function normalizeToSystemRoot(structure) {
             ? deepClone(structure)
             : { name: "C:", type: "folder", children: [] };
 
-    return {
+    const normalized = {
         name: "This PC",
         type: "system",
         roots: [singleRoot],
     };
+    return ensureStructureNodeIds(normalized);
 }
 
 function getDefaultRootPath(systemRoot) {
@@ -1110,14 +1336,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         currentPath = getDefaultRootPath(fileSystem);
         history = [currentPath];
         historyIndex = 0;
-        recycleBin = Array.isArray(cfg?.initialRecycleBin)
-            ? deepClone(cfg.initialRecycleBin)
-            : [];
+        recycleBin = ensureRecycleBinNodeIds(
+            Array.isArray(cfg?.initialRecycleBin)
+                ? deepClone(cfg.initialRecycleBin)
+                : [],
+        );
     } else if (restored) {
         // =====================================================================
         // STUDENT MODE: RESTORE SAME-TAB SESSION
         // =====================================================================
-        fileSystem = restored.fileSystem;
+        fileSystem = ensureStructureNodeIds(restored.fileSystem);
         currentPath = restored.currentPath || getDefaultRootPath(fileSystem);
         history = Array.isArray(restored.history)
             ? restored.history
@@ -1126,9 +1354,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             typeof restored.historyIndex === "number"
                 ? restored.historyIndex
                 : 0;
-        recycleBin = Array.isArray(restored.recycleBin)
-            ? restored.recycleBin
-            : [];
+        recycleBin = ensureRecycleBinNodeIds(
+            Array.isArray(restored.recycleBin) ? restored.recycleBin : [],
+        );
 
         debugLog("Student session state restored", restored);
     } else {
@@ -1151,10 +1379,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         currentPath = getDefaultRootPath(fileSystem);
         history = [currentPath];
         historyIndex = 0;
-        recycleBin = Array.isArray(cfg?.initialRecycleBin)
-            ? deepClone(cfg.initialRecycleBin)
-            : [];
+        recycleBin = ensureRecycleBinNodeIds(
+            Array.isArray(cfg?.initialRecycleBin)
+                ? deepClone(cfg.initialRecycleBin)
+                : [],
+        );
     }
+
+    initialFileSystem = ensureStructureNodeIds(initialFileSystem);
+    fileSystem = ensureStructureNodeIds(fileSystem);
+    resetActionLog();
 
     // Instructions
     const instructions = getExerciseInstructions();
@@ -2202,6 +2436,7 @@ function validateRename(oldName, newName, items) {
 function applyRename(oldName, newName, items) {
     const item = items.find((i) => i.name === oldName);
     if (!item) return false;
+    const subjectId = item.id;
 
     pushHistory({
         type: "rename",
@@ -2212,6 +2447,12 @@ function applyRename(oldName, newName, items) {
 
     item.name = newName;
     selectedItems = [newName];
+    logEvent("RENAME", {
+        subjectId,
+        fromName: oldName,
+        toName: newName,
+        parentPath: currentPath,
+    });
     return true;
 }
 
@@ -2325,6 +2566,20 @@ function setDeleteModalTextForSelection(textEl, selectedObjects) {
 function performPermanentDeleteFromRecycleBin() {
     // 🔒 Permanent delete = undo volledig blokkeren (existing behavior)
     resetUndoHistory();
+    const toDelete = recycleBin.find(
+        (item) => item.name === deleteContext.itemName,
+    );
+    if (toDelete) {
+        logEvent("PERMANENT_DELETE", {
+            subjectId: toDelete.id,
+            fromPath: joinPathMultiRoot(
+                toDelete.originalPath || "Recycle Bin",
+                toDelete.name,
+            ),
+            source: "recycle-bin",
+        });
+    }
+
 
     recycleBin = recycleBin.filter(
         (item) => item.name !== deleteContext.itemName,
@@ -2354,6 +2609,14 @@ function performSoftDeleteToRecycleBin() {
         originalPath: currentPath,
         deletedAt: new Date().toISOString(),
     }));
+    ensureRecycleBinNodeIds(deletedItems);
+
+    items.forEach((item) => {
+        logEvent("DELETE", {
+            subjectId: item.id,
+            fromPath: joinPathMultiRoot(currentPath, item.name),
+        });
+    });
 
     recycleBin = recycleBin.concat(deletedItems);
 
@@ -2442,10 +2705,12 @@ function handleRestore(itemName) {
 
     const originalPath = item.originalPath;
     const restoredItem = deepClone(item);
+    ensureNodeIdsRecursive(restoredItem);
     delete restoredItem.originalPath;
     delete restoredItem.deletedAt;
 
     const originalFolder = getFolder(originalPath);
+    let restoredToPath = null;
 
     if (!originalFolder) {
         if (
@@ -2456,18 +2721,33 @@ function handleRestore(itemName) {
             return;
         }
 
-        let restoredFolder = fileSystem.children.find(
+        const defaultRoot = getRootFolder("C:") || fileSystem?.roots?.[0];
+        if (!defaultRoot) return;
+
+        let restoredFolder = defaultRoot.children.find(
             (c) => c.name === "Restored" && c.type === "folder",
         );
         if (!restoredFolder) {
-            restoredFolder = { name: "Restored", type: "folder", children: [] };
-            fileSystem.children.push(restoredFolder);
+            restoredFolder = {
+                id: createUuid(),
+                name: "Restored",
+                type: "folder",
+                children: [],
+            };
+            defaultRoot.children.push(restoredFolder);
         }
 
         addWithUniqueName(restoredFolder.children, restoredItem);
+        restoredToPath = joinPathMultiRoot("C:\\Restored", restoredItem.name);
     } else {
         addWithUniqueName(originalFolder.children, restoredItem);
+        restoredToPath = joinPathMultiRoot(originalPath, restoredItem.name);
     }
+
+    logEvent("RESTORE", {
+        subjectId: restoredItem.id,
+        toPath: restoredToPath,
+    });
 
     recycleBin = recycleBin.filter((i) => i.name !== itemName);
     renderAll();
@@ -2508,14 +2788,27 @@ function handleCopy() {
 
 // INVARIANT (SYSTEM OPERATION):
 // Paste MUST auto-resolve name conflicts using the shared naming helper(s).
-function pasteClipboardItemsIntoFolder(targetFolder, clipboardItems) {
+function pasteClipboardItemsIntoFolder(targetFolder, clipboardItems, operation) {
+    const inserted = [];
+
     clipboardItems.forEach((item) => {
         const uniqueName = ensureUniqueChildName(
             targetFolder.children,
             item.name,
         );
-        targetFolder.children.push({ ...deepClone(item), name: uniqueName });
+        const cloned =
+            operation === "copy"
+                ? cloneNodeWithNewIds(item)
+                : deepClone(item);
+        cloned.name = uniqueName;
+        targetFolder.children.push(cloned);
+        inserted.push({
+            original: item,
+            inserted: cloned,
+        });
     });
+
+    return inserted;
 }
 
 function removeCutItemsFromSourceFolder(sourcePath, clipboardItems) {
@@ -2549,7 +2842,35 @@ function handlePaste() {
 
     const targetFolder = getCurrentFolder();
 
-    pasteClipboardItemsIntoFolder(targetFolder, clipboard.items);
+    const inserted = pasteClipboardItemsIntoFolder(
+        targetFolder,
+        clipboard.items,
+        clipboard.operation,
+    );
+
+    inserted.forEach(({ original, inserted: insertedNode }) => {
+        const fromPath = joinPathMultiRoot(clipboard.sourcePath, original.name);
+        const toPath = joinPathMultiRoot(currentPath, insertedNode.name);
+
+        if (
+            clipboard.operation === "cut" &&
+            clipboard.sourcePath !== currentPath
+        ) {
+            logEvent("MOVE", {
+                subjectId: original.id,
+                fromPath,
+                toPath,
+            });
+            return;
+        }
+
+        logEvent("COPY", {
+            subjectId: original.id,
+            outputId: insertedNode.id,
+            fromPath,
+            toPath,
+        });
+    });
 
     if (
         shouldClearClipboardAfterPaste(
@@ -2595,6 +2916,7 @@ function addZipFileToCurrentFolder(zipName, compressedContents, zipMeta) {
     const folder = getCurrentFolder();
 
     const zipItem = {
+        id: createUuid(),
         name: zipName,
         type: "file",
         isZip: true,
@@ -2624,13 +2946,16 @@ function extractZipToFolder(zipFile, destinationPath) {
 
     const contents = deepClone(zipFile.compressedContents);
     const addedNames = [];
+    const extractedIds = [];
 
     contents.forEach((item) => {
-        addWithUniqueName(destinationFolder.children, item);
-        addedNames.push(item.name);
+        const clonedItem = cloneNodeWithNewIds(item);
+        addWithUniqueName(destinationFolder.children, clonedItem);
+        addedNames.push(clonedItem.name);
+        if (clonedItem.id) extractedIds.push(clonedItem.id);
     });
 
-    return { mode: "items", names: addedNames };
+    return { mode: "items", names: addedNames, extractedIds };
 }
 
 function extractZipIntoCurrentFolder(zipFile) {
@@ -2812,6 +3137,11 @@ function confirmExtractToDestination() {
             );
 
             if (!extractedResult) return;
+            logEvent("ZIP_EXTRACT", {
+                archiveId: zipFile.id,
+                destPath: destinationPath,
+                extractedIds: extractedResult.extractedIds || [],
+            });
 
             if (extractWizardState.showAfterComplete) {
                 navigate(destinationPath);
@@ -2849,6 +3179,14 @@ function handleCompress() {
                 items,
                 zipMeta,
             );
+            const outputPath = joinPathMultiRoot(currentPath, finalZipName);
+            const createdZip = getFileByPath(outputPath);
+            logEvent("ZIP_CREATE", {
+                outputId: createdZip?.id || null,
+                outputPath,
+                outputName: finalZipName,
+                inputIds: items.map((item) => item.id).filter(Boolean),
+            });
 
             selectedItems = [finalZipName];
             renderAll();
@@ -2901,11 +3239,29 @@ function createNewItem() {
     }
 
     const folder = getCurrentFolder();
+    let createdNode = null;
     if (type === "folder") {
-        folder.children.push({ name, type: "folder", children: [] });
+        createdNode = {
+            id: createUuid(),
+            name,
+            type: "folder",
+            children: [],
+        };
+        folder.children.push(createdNode);
     } else {
-        folder.children.push({ name, type: "file", content: content || "" });
+        createdNode = {
+            id: createUuid(),
+            name,
+            type: "file",
+            content: content || "",
+        };
+        folder.children.push(createdNode);
     }
+    logEvent("CREATE", {
+        subjectId: createdNode?.id || null,
+        toPath: joinPathMultiRoot(currentPath, name),
+        nodeType: type,
+    });
 
     selectedItems = [name];
     hideModal("newItemModal");

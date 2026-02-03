@@ -1,6 +1,6 @@
 ## Conceptual model: checks vs diffs vs tasks
 
-In Base44, **checks**, **diffs**, and **tasks** serve different purposes.
+In BBSIM, **checks**, **diffs**, and **tasks** serve different purposes.
 They are intentionally separated to keep the system understandable,
 testable, and pedagogically correct.
 
